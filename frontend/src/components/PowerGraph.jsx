@@ -63,10 +63,11 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
         }
         
         return dataToRender.map(reading => ({
-          time: new Date(reading.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          fullTime: new Date(reading.timestamp).toLocaleTimeString(),
+          // Include date information in the time display
+          time: new Date(reading.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + 
+                new Date(reading.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          fullTime: new Date(reading.timestamp).toLocaleString(), // Full date and time
           fullTimestamp: reading.timestamp,
-          // Handle different property names
           [graphType]: graphType === 'powerFactor' ? reading.power_factor : reading[graphType],
           is_anomaly: reading.is_anomaly
         }));
@@ -168,7 +169,8 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
                   angle={-45} 
                   textAnchor="end" 
                   height={70} 
-                  tick={{ fontSize: 12 }}
+                  tick={{ fontSize: 10 }} // Smaller font to fit more text
+                  interval={Math.floor(chartData.length / 10)} // Show fewer ticks for readability
                 />
                 <YAxis
                   domain={['auto', 'auto']}
