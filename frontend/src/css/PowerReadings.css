@@ -55,3 +55,35 @@
         padding: 0.75rem;
     }
 }
+
+/* Pagination styles */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.pagination-button {
+    padding: 8px 12px;
+    background-color: #2f855a;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.pagination-button:hover {
+    background-color: #38a169;
+}
+
+.pagination-button:disabled {
+    background-color: #c6f6d5;
+    color: #2f855a;
+    cursor: not-allowed;
+}
+
+.pagination-info {
+    font-size: 14px;
+}

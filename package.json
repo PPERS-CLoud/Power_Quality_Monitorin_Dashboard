@@ -1,5 +1,17 @@
 {
   "dependencies": {
-    "react-router": "^7.1.5"
+    "react-router": "^7.1.5",
+    "recharts": "^2.15.3"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "scripts": {
+    "setup": "npm run setup:backend && npm run setup:frontend",
+    "setup:backend": "cd backend && pip install django djangorestframework django-cors-headers djangorestframework-simplejwt firebase-admin",
+    "setup:frontend": "cd frontend && npm install",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "cd backend && python manage.py runserver",
+    "start:frontend": "cd frontend && npm run dev"
   }
 }

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Sidebar from "../components/Sidebar";
 import PowerReadings from "../components/PowerReadings";
 import Dashboard from "../components/Dashboard";
+// import RealtimePowerReadings from "../components/RealtimePowerReadings";
 import "../css/MainContent.css";
 
 const MainContent = () => {

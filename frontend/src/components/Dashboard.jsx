@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { database } from '../services/firebase';
+import { ref, onValue, query, orderByKey, limitToLast } from 'firebase/database';
 import '../css/Dashboard.css';
+import PowerGraph from './PowerGraph';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faFileDownload, 
@@ -20,27 +23,111 @@ const Dashboard = () => {
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', content: '' });
   const [selectedNode, setSelectedNode] = useState('C-1'); // Default selected node
+  const [startDate, setStartDate] = useState('2025-03-10'); // Default start date
+  const [endDate, setEndDate] = useState('2025-03-10'); // Default end date
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    const fetchReadings = async () => {
+    const fetchFirebaseData = async () => {
+      setIsLoading(true);
+      setReadings([]); // Clear previous readings
+      
       try {
-        const response = await axios.get(apiURL);
-        setReadings(response.data);
+        // Generate array of dates between startDate and endDate
+        const dateRange = getDatesInRange(new Date(startDate), new Date(endDate));
+        let allReadings = [];
+        
+        // Fetch data for each day in the range
+        for (const date of dateRange) {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          
+          const path = `${selectedNode}/${year}/${month}/${day}`;
+          console.log(`Fetching data from path: ${path}`);
+          
+          const nodeRef = ref(database, path);
+          
+          try {
+            // Using a promise to handle asynchronous Firebase calls
+            const snapshot = await new Promise((resolve, reject) => {
+              onValue(nodeRef, resolve, (error) => {
+                console.error(`Error fetching from ${path}:`, error);
+                reject(error);
+              }, { onlyOnce: true });
+            });
+            
+            const data = snapshot.val();
+            
+            if (data) {
+              console.log(`Data found at ${path}:`, data);
+              
+              // Convert Firebase data to readings format
+              Object.keys(data).forEach(time => {
+                const reading = data[time];
+                allReadings.push({
+                  id: `${year}-${month}-${day}-${time}`,
+                  deviceId: selectedNode,
+                  timestamp: `${year}-${month}-${day}T${time}`,
+                  voltage: reading.voltage,
+                  current: reading.current,
+                  power: reading.power,
+                  power_factor: reading.powerFactor,
+                  frequency: reading.frequency,
+                  is_anomaly: reading.is_anomaly || false
+                });
+              });
+              
+              console.log(`Added ${Object.keys(data).length} readings from ${year}-${month}-${day}`);
+            } else {
+              console.log(`No data found at path: ${path}`);
+            }
+          } catch (err) {
+            console.error(`Error fetching data from ${path}:`, err);
+          }
+        }
+        
+        // Sort by timestamp (newest first)
+        allReadings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        setReadings(allReadings);
         
         // Set the latest reading
-        if (response.data.length > 0) {
-          setLatestReading(response.data[0]);
+        if (allReadings.length > 0) {
+          setLatestReading(allReadings[0]);
+        } else {
+          setLatestReading(null);
+          console.log(`No data found for ${selectedNode} in date range ${startDate} to ${endDate}`);
         }
-      } catch (error) {
-        console.error('Error fetching data:', error);
+        
+      } catch (err) {
+        console.error("Error processing Firebase data:", err);
+      } finally {
+        setIsLoading(false);
       }
     };
-
-    fetchReadings();
-    // Fetch data every 5 seconds
-    const interval = setInterval(fetchReadings, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  
+    // Helper function to get all dates in a range
+    const getDatesInRange = (startDate, endDate) => {
+      const dates = [];
+      const currentDate = new Date(startDate);
+      
+      // Add one day to include the end date
+      const endDateTime = new Date(endDate);
+      endDateTime.setDate(endDateTime.getDate() + 1);
+      
+      while (currentDate < endDateTime) {
+        dates.push(new Date(currentDate));
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      return dates;
+    };
+  
+    fetchFirebaseData();
+    
+    // No need for cleanup since we're using onlyOnce: true
+  }, [selectedNode, startDate, endDate]);
 
   // Calculate metrics
   const countAnomalies = () => {
@@ -53,8 +140,12 @@ const Dashboard = () => {
   };
 
   // Handler for date range change
-  const handleDateRangeChange = (e) => {
-    setDateRange(e.target.value);
+  const handleStartDateChange = (e) => {
+    setStartDate(e.target.value);
+  };
+  
+  const handleEndDateChange = (e) => {
+    setEndDate(e.target.value);
   };
 
   // Handler for node selection change
@@ -111,12 +202,16 @@ const Dashboard = () => {
                   type="date" 
                   className="date-picker" 
                   name="start-date"
+                  value={startDate}
+                  onChange={handleStartDateChange}
                 />
                 <span className="date-separator">-</span>
                 <input 
                   type="date" 
                   className="date-picker" 
                   name="end-date"
+                  value={endDate}
+                  onChange={handleEndDateChange}
                 />
               </div>
             </div>
@@ -226,12 +321,26 @@ const Dashboard = () => {
             
             {/* Graph content as second row */}
             <div className="graph-content">
-              <div className="graph-placeholder">
-                <div className="graph-message">
-                  <p>{graphType === 'powerFactor' ? 'Power Factor' : graphType.charAt(0).toUpperCase() + graphType.slice(1)} graph will be displayed here showing trends over time.</p>
-                  <p>Date range: {dateRange}, Data points: {readings.length}</p>
+              {isLoading ? (
+                <div className="graph-placeholder">
+                  <div className="graph-message">
+                    <p>Loading data...</p>
+                  </div>
                 </div>
-              </div>
+              ) : readings.length > 0 ? (
+                <PowerGraph 
+                  readings={readings} 
+                  graphType={graphType} 
+                  selectedNode={selectedNode} 
+                />
+              ) : (
+                <div className="graph-placeholder">
+                  <div className="graph-message">
+                    <p>No data available for {selectedNode} on selected date range.</p>
+                    <p>Please select a different node or date range.</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

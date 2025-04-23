@@ -1,13 +1,13 @@
 import React from "react";
 import "../css/Sidebar.css";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faTachometerAlt, faTable, faUser } from '@fortawesome/free-solid-svg-icons';
+import { faTachometerAlt, faTable, faUser, faBolt } from '@fortawesome/free-solid-svg-icons';
 
 const Sidebar = ({ onMenuClick }) => {
   return (
     <div className="sidebar">
       <h2 className="title">Power Monitoring</h2>
-      <button onClick={() => onMenuClick("Dashboard")}>
+      <button onClick={() => onMenuClick("dashboard")}>
         <FontAwesomeIcon icon={faTachometerAlt} className="fa-icon" /> Dashboard
       </button>
       <button onClick={() => onMenuClick("powerReadings")}>
