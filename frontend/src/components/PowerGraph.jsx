@@ -1,50 +1,102 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
+  Legend, Scatter, Brush
+} from 'recharts';
 import '../css/PowerGraph.css';
 
+// Custom dot component to highlight anomalies
+const CustomDot = (props) => {
+  const { cx, cy, payload } = props;
+  
+  if (payload && payload.is_anomaly) {
+    return (
+      <circle 
+        cx={cx} 
+        cy={cy} 
+        r={5} 
+        fill="#ff6b6b" 
+        stroke="#e53e3e"
+        strokeWidth={2}
+      />
+    );
+  }
+  
+  // Regular data points are rendered by default
+  return null;
+};
+
 const PowerGraph = ({ readings, graphType, selectedNode }) => {
-  // Add debugging on component mount or updates
+  const [chartData, setChartData] = useState([]);
+  const [stats, setStats] = useState({ min: 0, max: 0, avg: 0 });
+  
+  // Format data for the chart - moved to useEffect to avoid recalculating on every render
   useEffect(() => {
-    console.log("PowerGraph received readings:", readings);
-    console.log("Number of readings:", readings.length);
+    console.log("PowerGraph received readings:", readings?.length || 0);
     console.log("Selected node:", selectedNode);
     console.log("Graph type:", graphType);
-  }, [readings, graphType, selectedNode]);
-
-  // Format data for the chart
-  const formatData = () => {
-    if (!readings || readings.length === 0) {
-      console.log("No readings data available to format");
-      return [];
-    }
     
-    try {
-      // Sort by timestamp (oldest first for the chart)
-      const sortedData = [...readings].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-      
-      // Adaptive resolution: If we have too many points, we can sample based on date range
-      const totalPoints = sortedData.length;
-      let dataToRender = sortedData;
-      
-      // For extremely large datasets, use adaptive sampling
-      if (totalPoints > 1000) {
-        // Calculate a sampling rate that's proportional to the data size
-        const samplingRate = Math.ceil(totalPoints / 1000);
-        console.log(`Large dataset detected (${totalPoints} points). Using adaptive sampling rate: 1:${samplingRate}`);
-        dataToRender = sortedData.filter((_, index) => index % samplingRate === 0);
+    // Define formatData inside useEffect to avoid stale closures
+    const formatData = () => {
+      if (!readings || readings.length === 0) {
+        console.log("No readings data available to format");
+        return [];
       }
       
-      return dataToRender.map(reading => ({
-        time: new Date(reading.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        fullTimestamp: reading.timestamp,
-        [graphType === 'powerFactor' ? 'powerFactor' : graphType]: 
-          graphType === 'powerFactor' ? reading.power_factor : reading[graphType],
-        is_anomaly: reading.is_anomaly
-      }));
-    } catch (err) {
-      console.error("Error formatting data:", err);
-      return [];
-    }
-  };
+      try {
+        // Sort by timestamp (oldest first for the chart)
+        const sortedData = [...readings].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        // Adaptive resolution: If we have too many points, sample based on data size
+        const totalPoints = sortedData.length;
+        let dataToRender = sortedData;
+        
+        // For extremely large datasets, use more aggressive sampling
+        if (totalPoints > 10000) {
+          const samplingRate = Math.ceil(totalPoints / 500);
+          console.log(`Very large dataset detected (${totalPoints} points). Using sampling rate: 1:${samplingRate}`);
+          dataToRender = sortedData.filter((_, index) => index % samplingRate === 0);
+        } else if (totalPoints > 1000) {
+          const samplingRate = Math.ceil(totalPoints / 1000);
+          console.log(`Large dataset detected (${totalPoints} points). Using sampling rate: 1:${samplingRate}`);
+          dataToRender = sortedData.filter((_, index) => index % samplingRate === 0);
+        }
+        
+        return dataToRender.map(reading => ({
+          time: new Date(reading.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          fullTime: new Date(reading.timestamp).toLocaleTimeString(),
+          fullTimestamp: reading.timestamp,
+          // Handle different property names
+          [graphType]: graphType === 'powerFactor' ? reading.power_factor : reading[graphType],
+          is_anomaly: reading.is_anomaly
+        }));
+      } catch (err) {
+        console.error("Error formatting data:", err);
+        return [];
+      }
+    };
+    
+    // Calculate statistics for the dataset
+    const calculateStats = (data) => {
+      if (!data || data.length === 0) return { min: 0, max: 0, avg: 0 };
+      
+      const values = data.map(item => item[graphType]);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
+      
+      return { 
+        min: parseFloat(min.toFixed(2)), 
+        max: parseFloat(max.toFixed(2)), 
+        avg: parseFloat(avg.toFixed(2)) 
+      };
+    };
+    
+    // Process data and update state
+    const formattedData = formatData();
+    setChartData(formattedData);
+    setStats(calculateStats(formattedData));
+  }, [readings, graphType, selectedNode]);
 
   // Get units for display
   const getUnit = () => {
@@ -58,64 +110,144 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
     }
   };
 
-  const chartData = formatData();
   const unit = getUnit();
-  
-  // Return an HTMLCanvas chart instead of Recharts
+
+  // Get color based on power parameter type
+  const getLineColor = () => {
+    switch (graphType) {
+      case 'voltage': return '#3182CE'; // blue
+      case 'current': return '#DD6B20'; // orange
+      case 'power': return '#38A169';   // green
+      case 'frequency': return '#805AD5'; // purple
+      case 'powerFactor': return '#D53F8C'; // pink
+      default: return '#38A169'; // default green
+    }
+  };
+
   return (
     <div className="power-graph-container">
-      <div className="canvas-container">
-        <h4>Data Summary for {selectedNode}</h4>
-        <p>Total readings received: {readings.length}</p>
-        <p>Processed data points: {chartData.length}</p>
-        <p>Displaying: {graphType === 'powerFactor' ? 'Power Factor' : graphType}</p>
-        
-        {chartData.length > 0 ? (
-          <>
-            <p>Time Range: {new Date(chartData[0].fullTimestamp).toLocaleString()} - {new Date(chartData[chartData.length-1].fullTimestamp).toLocaleString()}</p>
-            
-            <div className="data-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>{graphType === 'powerFactor' ? 'Power Factor' : graphType} ({unit})</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chartData.slice(0, 10).map((reading, index) => (
-                    <tr key={index} className={reading.is_anomaly ? 'anomaly-row' : ''}>
-                      <td>{new Date(reading.fullTimestamp).toLocaleTimeString()}</td>
-                      <td>{graphType === 'powerFactor' ? reading.powerFactor : reading[graphType]}</td>
-                    </tr>
-                  ))}
-                  {chartData.length > 10 && (
-                    <tr>
-                      <td colSpan="2">... and {chartData.length - 10} more points</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+      {chartData.length > 0 ? (
+        <>
+          <div className="graph-stats">
+            <div className="stat-item">
+              <h4>Min</h4>
+              <p>{stats.min} {unit}</p>
             </div>
-          </>
-        ) : (
-          <div className="no-data-message">
-            <p>No data to display. Please check the following:</p>
-            <ul>
-              <li>Verify the Firebase database URL is correct: <br/>
-              <code>https://powerquality-d9f8e-default-rtdb.asia-southeast1.firebasedatabase.app/{selectedNode}/2025/03/10</code></li>
-              <li>Confirm data exists for the selected node: {selectedNode}</li>
-              <li>Try a different date range</li>
-              <li>Check browser console for errors</li>
-            </ul>
+            <div className="stat-item">
+              <h4>Average</h4>
+              <p>{stats.avg} {unit}</p>
+            </div>
+            <div className="stat-item">
+              <h4>Max</h4>
+              <p>{stats.max} {unit}</p>
+            </div>
+            <div className="stat-item">
+              <h4>Data Points</h4>
+              <p>{chartData.length}</p>
+            </div>
+            {chartData.filter(d => d?.is_anomaly).length > 0 && (
+              <div className="stat-item anomaly-stat">
+                <h4>Anomalies</h4>
+                <p>{chartData.filter(d => d?.is_anomaly).length}</p>
+              </div>
+            )}
           </div>
-        )}
-        
-        <p className="chart-note">
-          Note: Full chart rendering temporarily disabled due to React compatibility issue.
-          Please check the summary data above.
-        </p>
-      </div>
+
+          <div className="chart-container">
+            {/* Replace ResponsiveContainer with div */}
+            <div style={{ width: '100%', height: 400 }}>
+              <LineChart
+                width={800}
+                height={400}
+                data={chartData}
+                margin={{ top: 10, right: 30, left: 20, bottom: 70 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" opacity={0.7} />
+                <XAxis 
+                  dataKey="time" 
+                  angle={-45} 
+                  textAnchor="end" 
+                  height={70} 
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis
+                  domain={['auto', 'auto']}
+                  label={{ 
+                    value: `${graphType.charAt(0).toUpperCase() + graphType.slice(1)} (${unit})`, 
+                    angle: -90, 
+                    position: 'insideLeft' 
+                  }}
+                />
+                <Tooltip 
+                  formatter={(value) => [`${value} ${unit}`, graphType.charAt(0).toUpperCase() + graphType.slice(1)]}
+                  labelFormatter={(time) => {
+                    const dataPoint = chartData.find(d => d.time === time);
+                    return dataPoint ? `Time: ${dataPoint.fullTime}` : time;
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey={graphType}
+                  stroke={getLineColor()}
+                  strokeWidth={2}
+                  activeDot={{ r: 6 }}
+                  dot={{ r: 3 }}
+                  isAnimationActive={false}
+                />
+                <Scatter 
+                  data={chartData.filter(d => d?.is_anomaly)} 
+                  fill="#ff6b6b" 
+                  shape={<CustomDot />}
+                />
+                <Legend 
+                  align="center" 
+                  verticalAlign="top" 
+                  height={36}
+                  payload={[
+                    { value: graphType.charAt(0).toUpperCase() + graphType.slice(1), type: 'line', color: getLineColor() },
+                    ...(chartData.some(d => d?.is_anomaly) ? [{ value: 'Anomalies', type: 'circle', color: '#ff6b6b' }] : [])
+                  ]}
+                />
+                <Brush dataKey="time" height={30} stroke={getLineColor()} />
+              </LineChart>
+            </div>
+          </div>
+
+          <div className="anomaly-table">
+            {chartData.some(d => d?.is_anomaly) && (
+              <>
+                <h4>Anomaly Details</h4>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>{graphType.charAt(0).toUpperCase() + graphType.slice(1)} ({unit})</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chartData.filter(d => d?.is_anomaly).map((reading, index) => (
+                      <tr key={index} className="anomaly-row">
+                        <td>{new Date(reading.fullTimestamp).toLocaleString()}</td>
+                        <td>{reading[graphType]}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="no-data-message">
+          <p>No data to display. Please check the following:</p>
+          <ul>
+            <li>Verify the Firebase database URL is correct</li>
+            <li>Confirm data exists for the selected node: {selectedNode}</li>
+            <li>Try a different date range</li>
+            <li>Check browser console for errors</li>
+          </ul>
+        </div>
+      )}
     </div>
   );
 };
