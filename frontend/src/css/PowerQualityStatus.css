@@ -1,0 +1,15 @@
+/* Add this to your existing CSS */
+.status-indicator.excellent {
+    background-color: #805AD5; /* Purple for excellent */
+    color: white;
+}
+
+.status-indicator.good {
+    background-color: #48BB78; /* Green for good */
+    color: white;
+}
+
+.status-indicator.poor {
+    background-color: #F56565; /* Red for poor */
+    color: white;
+}

@@ -4,6 +4,8 @@ import { database } from '../services/firebase';
 import { ref, onValue, query, orderByKey, limitToLast } from 'firebase/database';
 import '../css/Dashboard.css';
 import PowerGraph from './PowerGraph';
+import InterruptionMetrics from './InterruptionMetrics';
+import PowerQualityStatus from './PowerQualityStatus';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faFileDownload, 
@@ -228,47 +230,45 @@ const Dashboard = () => {
 
         {/* Top row - Power quality metrics */}
         <div className="metric-cards-row">
-          <div className="metric-card large bg-green">
-            <h3>Power Quality Status</h3>
-            <p className="metric-value">
-              <span className={`status-indicator ${latestReading && latestReading.is_anomaly ? 'poor' : 'good'}`}>
-                {latestReading && latestReading.is_anomaly ? 'Poor' : 'Good'}
-              </span>
-            </p>
-            <div className="card-icon">
-              <FontAwesomeIcon icon={faBolt} />
-            </div>
-            <div className="more-info" onClick={() => openModal("Power Quality Status", "Power quality is determined by monitoring voltage, current, and frequency levels. Good power quality ensures stable operation of electrical equipment.")}>
-              More info &gt;
-            </div>
-          </div>
-          <div className="metric-card large bg-blue">
-            <h3>Average Interruption</h3>
-            <p className="metric-value">2.5 <span className="unit">min</span></p>
-            <div className="card-icon">
-              <FontAwesomeIcon icon={faHourglass} />
-            </div>
-            <div className="more-info" onClick={() => openModal("Average Interruption", "The average interruption duration represents the typical length of power outages experienced. Lower values indicate better grid reliability.")}>
-              More info &gt;
-            </div>
-          </div>
-          <div className="metric-card large bg-red">
-            <h3>Number of Interruptions</h3>
-            <p className="metric-value">3</p>
-            <div className="card-icon">
-              <FontAwesomeIcon icon={faTimesCircle} />
-            </div>
-            <div className="more-info" onClick={() => openModal("Number of Interruptions", "This metric shows how many times the power supply has been interrupted. Frequent interruptions may indicate grid instability or equipment issues.")}>
-              More info &gt;
-            </div>
-          </div>
+          <PowerQualityStatus
+            readings={readings}
+            latestReading={latestReading}
+            thresholds={{
+              voltage: { 
+                min: 210, 
+                max: 230, 
+                ideal: { min: 218, max: 222 } // Add ideal range
+              },
+              frequency: { 
+                min: 59.5, 
+                max: 60.5, 
+                ideal: { min: 59.9, max: 60.1 } // Add ideal range
+              },
+              powerFactor: { 
+                min: 0.85, 
+                ideal: 0.95 // Add ideal value
+              }
+            }}
+            method="combined" // Use "combined" for comprehensive assessment
+            onModalOpen={openModal}
+          />
+          
+          {/* Replace the two hardcoded interruption cards with the component */}
+          <InterruptionMetrics 
+            readings={readings}
+            voltageThreshold={218} // Just Change the Voltage Threshold Here
+            minDurationSec={30} // And the Duration
+            onModalOpen={openModal}
+          />
+          
           <div className="metric-card large bg-gray">
             <h3>Number of Anomalies</h3>
             <p className="metric-value">{countAnomalies()}</p>
             <div className="card-icon">
               <FontAwesomeIcon icon={faExclamationCircle} />
             </div>
-            <div className="more-info" onClick={() => openModal("Number of Anomalies", "Anomalies are unusual patterns in power metrics that may indicate potential issues. Regular monitoring helps prevent equipment damage.")}>
+            <div className="more-info" onClick={() => openModal("Number of Anomalies", 
+              "Anomalies are unusual patterns in power metrics that may indicate potential issues. Regular monitoring helps prevent equipment damage.")}>
               More info &gt;
             </div>
           </div>
