@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  Legend, Scatter, Brush
+  Legend, Scatter, Brush, ResponsiveContainer
 } from 'recharts';
 import '../css/PowerGraph.css';
 
@@ -125,120 +125,121 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
     }
   };
 
+  // Calculate fixed domain range for Y axis based on graph type
+  const getYAxisDomain = () => {
+    switch (graphType) {
+      case 'voltage':
+        return [200, 250]; // Standard voltage range for residential power
+      case 'current':
+        return [0, 20]; // Typical current range in Amperes
+      case 'power':
+        return [0, 500]; // Adjusted power range based on the image (0-500W)
+      case 'frequency':
+        return [59, 61]; // Frequency range around 60Hz
+      case 'powerFactor':
+        return [0, 1]; // Power factor range from 0 to 1
+      default:
+        return [0, 100]; // Default range
+    }
+  };
+
   return (
     <div className="power-graph-container">
       {chartData.length > 0 ? (
-        <>
-          <div className="graph-stats">
-            <div className="stat-item">
-              <h4>Min</h4>
-              <p>{stats.min} {unit}</p>
-            </div>
-            <div className="stat-item">
-              <h4>Average</h4>
-              <p>{stats.avg} {unit}</p>
-            </div>
-            <div className="stat-item">
-              <h4>Max</h4>
-              <p>{stats.max} {unit}</p>
-            </div>
-            <div className="stat-item">
-              <h4>Data Points</h4>
-              <p>{chartData.length}</p>
-            </div>
-            {chartData.filter(d => d?.is_anomaly).length > 0 && (
-              <div className="stat-item anomaly-stat">
-                <h4>Anomalies</h4>
-                <p>{chartData.filter(d => d?.is_anomaly).length}</p>
+        <div className="two-column-layout">
+          {/* First Column - Stats and Anomalies */}
+          <div className="stats-column">
+            <h3 className="stats-title">Statistics</h3>
+            <div className="graph-stats">
+              <div className="stat-item">
+                <h4>Min</h4>
+                <p>{stats.min} {unit}</p>
               </div>
-            )}
-          </div>
-
-          <div className="chart-container">
-            {/* Replace ResponsiveContainer with div */}
-            <div style={{ width: '100%', height: 400 }}>
-              <LineChart
-                width={800}
-                height={400}
-                data={chartData}
-                margin={{ top: 10, right: 30, left: 20, bottom: 70 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" opacity={0.7} />
-                <XAxis 
-                  dataKey="time" 
-                  angle={-45} 
-                  textAnchor="end" 
-                  height={70} 
-                  tick={{ fontSize: 10 }} // Smaller font to fit more text
-                  interval={Math.floor(chartData.length / 10)} // Show fewer ticks for readability
-                />
-                <YAxis
-                  domain={['auto', 'auto']}
-                  label={{ 
-                    value: `${graphType.charAt(0).toUpperCase() + graphType.slice(1)} (${unit})`, 
-                    angle: -90, 
-                    position: 'insideLeft' 
-                  }}
-                />
-                <Tooltip 
-                  formatter={(value) => [`${value} ${unit}`, graphType.charAt(0).toUpperCase() + graphType.slice(1)]}
-                  labelFormatter={(time) => {
-                    const dataPoint = chartData.find(d => d.time === time);
-                    return dataPoint ? `Time: ${dataPoint.fullTime}` : time;
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey={graphType}
-                  stroke={getLineColor()}
-                  strokeWidth={2}
-                  activeDot={{ r: 6 }}
-                  dot={{ r: 3 }}
-                  isAnimationActive={false}
-                />
-                <Scatter 
-                  data={chartData.filter(d => d?.is_anomaly)} 
-                  fill="#ff6b6b" 
-                  shape={<CustomDot />}
-                />
-                <Legend 
-                  align="center" 
-                  verticalAlign="top" 
-                  height={36}
-                  payload={[
-                    { value: graphType.charAt(0).toUpperCase() + graphType.slice(1), type: 'line', color: getLineColor() },
-                    ...(chartData.some(d => d?.is_anomaly) ? [{ value: 'Anomalies', type: 'circle', color: '#ff6b6b' }] : [])
-                  ]}
-                />
-                <Brush dataKey="time" height={30} stroke={getLineColor()} />
-              </LineChart>
+              <div className="stat-item">
+                <h4>Average</h4>
+                <p>{stats.avg} {unit}</p>
+              </div>
+              <div className="stat-item">
+                <h4>Max</h4>
+                <p>{stats.max} {unit}</p>
+              </div>
+              <div className="stat-item">
+                <h4>Data Points</h4>
+                <p>{chartData.length}</p>
+              </div>
+              {chartData.filter(d => d?.is_anomaly).length > 0 && (
+                <div className="stat-item anomaly-stat">
+                  <h4>Anomalies</h4>
+                  <p>{chartData.filter(d => d?.is_anomaly).length}</p>
+                </div>
+              )}
             </div>
           </div>
-
-          <div className="anomaly-table">
-            {chartData.some(d => d?.is_anomaly) && (
-              <>
-                <h4>Anomaly Details</h4>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>{graphType.charAt(0).toUpperCase() + graphType.slice(1)} ({unit})</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {chartData.filter(d => d?.is_anomaly).map((reading, index) => (
-                      <tr key={index} className="anomaly-row">
-                        <td>{new Date(reading.fullTimestamp).toLocaleString()}</td>
-                        <td>{reading[graphType]}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
+          
+          {/* Second Column - Graph */}
+          <div className="graph-column">
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={chartData}
+                  margin={{ top: 0, right: 0, left: 0, bottom: 0 }} // Adjusted left margin to extend graph
+                >
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.7} />
+                  <XAxis 
+                    dataKey="time" 
+                    angle={-45} 
+                    textAnchor="end" 
+                    height={70} 
+                    tick={{ fontSize: 10 }}
+                    interval={Math.floor(chartData.length / 10)}
+                  />
+                  <YAxis
+                    domain={getYAxisDomain()}
+                    label={{ 
+                      value: `${graphType.charAt(0).toUpperCase() + graphType.slice(1)} (${unit})`, 
+                      angle: -90, 
+                      position: 'insideLeft',
+                      offset: -20
+                    }}
+                    allowDataOverflow={true}
+                    width={60}
+                  />
+                  <Tooltip 
+                    formatter={(value) => [`${value} ${unit}`, graphType.charAt(0).toUpperCase() + graphType.slice(1)]}
+                    labelFormatter={(time) => {
+                      const dataPoint = chartData.find(d => d.time === time);
+                      return dataPoint ? `Time: ${dataPoint.fullTime}` : time;
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey={graphType}
+                    stroke={getLineColor()}
+                    strokeWidth={2}
+                    activeDot={{ r: 6 }}
+                    dot={{ r: 3 }}
+                    isAnimationActive={false}
+                  />
+                  <Scatter 
+                    data={chartData.filter(d => d?.is_anomaly)} 
+                    fill="#ff6b6b" 
+                    shape={<CustomDot />}
+                  />
+                  <Legend 
+                    align="center" 
+                    verticalAlign="top" 
+                    height={36}
+                    payload={[
+                      { value: graphType.charAt(0).toUpperCase() + graphType.slice(1), type: 'line', color: getLineColor() },
+                      ...(chartData.some(d => d?.is_anomaly) ? [{ value: 'Anomalies', type: 'circle', color: '#ff6b6b' }] : [])
+                    ]}
+                  />
+                  <Brush dataKey="time" height={20} stroke={getLineColor()} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </>
+        </div>
       ) : (
         <div className="no-data-message">
           <p>No data to display. Please check the following:</p>

@@ -14,6 +14,7 @@
     "@fortawesome/free-solid-svg-icons": "^6.7.2",
     "@fortawesome/react-fontawesome": "^0.2.2",
     "axios": "^1.7.9",
+    "django": "^99.99.99",
     "firebase": "^11.6.0",
     "install": "^0.13.0",
     "npm": "^11.1.0",

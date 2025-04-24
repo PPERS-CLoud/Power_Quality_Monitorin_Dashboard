@@ -2,18 +2,31 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  overflow: hidden; /* Prevent scrolling on the body */
+}
+
+#root {
+  height: 100%;
 }
 
 .main-content {
-    display: grid;
-    background-color: #d9eeda;
-    grid-template-columns: 250px 1fr;
-    gap: 75px;
-    height: 100vh;
-  }
-  
-  .content-area {
-    background-color: #d9eeda;
-    flex-grow: 1;
-    padding: 20px;
-  }
+  display: grid;
+  background-color: #d9eeda;
+  grid-template-columns: 250px 1fr;
+  gap: 75px;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden; /* Prevent overall scrolling */
+}
+
+.divider {
+  height: 100%;
+  overflow: hidden; /* Ensure no overflow */
+}
+
+.content-area {
+  background-color: #d9eeda;
+  height: 100%;
+  padding: 20px;
+  overflow-y: auto; /* Allow scrolling in the content area only */
+}

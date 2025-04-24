@@ -13,7 +13,8 @@ import {
   faBolt, 
   faHourglass, 
   faExclamationCircle,
-  faTimesCircle 
+  faTimesCircle,
+  faSpinner 
 } from '@fortawesome/free-solid-svg-icons';
 
 const Dashboard = () => {
@@ -323,7 +324,8 @@ const Dashboard = () => {
             <div className="graph-content">
               {isLoading ? (
                 <div className="graph-placeholder">
-                  <div className="graph-message">
+                  <div className="loading-spinner-container">
+                    <FontAwesomeIcon icon={faSpinner} className="spinner-icon" />
                     <p>Loading data...</p>
                   </div>
                 </div>
