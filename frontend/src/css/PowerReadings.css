@@ -1,15 +1,204 @@
 .readings-container {
     padding: 2rem;
-    max-width: 1200px;
     margin: 0 auto;
     color: black; /* Light mode text color */
 }
 
-.readings-title {
-    color: #333;
-    margin-bottom: 2rem;
-    text-align: center;
+.header-row, .subheader-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.main-title {
+    color: #2f855a;
+    margin: 0;
     font-size: 2rem;
+    font-weight: 700;
+}
+
+.sub-title {
+    color: #333;
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.button-group {
+    display: flex;
+    gap: 1rem;
+}
+
+.download-btn, .filter-btn, .reset-btn {
+    background-color: #2f855a;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.2s;
+}
+
+.download-btn:hover, .filter-btn:hover, .reset-btn:hover {
+    background-color: #38a169;
+}
+
+.reset-btn {
+    background-color: #e53e3e;
+}
+
+.reset-btn:hover {
+    background-color: #f56565;
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.filter-modal {
+    background-color: white;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #2f855a;
+    font-size: 1.5rem;
+}
+
+.close-modal {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    cursor: pointer;
+    color: #666;
+}
+
+.close-modal:hover {
+    color: #333;
+}
+
+.filter-content {
+    padding: 1.25rem;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-top: 1px solid #eee;
+}
+
+.cancel-btn, .apply-btn {
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.cancel-btn {
+    background-color: #edf2f7;
+    color: #4a5568;
+    border: none;
+}
+
+.cancel-btn:hover {
+    background-color: #e2e8f0;
+}
+
+.apply-btn {
+    background-color: #2f855a;
+    color: white;
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.apply-btn:hover {
+    background-color: #38a169;
+}
+
+.filter-panel {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.filter-row:last-child {
+    margin-bottom: 0;
+}
+
+.filter-group {
+    flex: 1;
+    min-width: 250px;
+}
+
+.filter-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.filter-group input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.range-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.range-inputs input {
+    flex: 1;
+}
+
+.range-inputs span {
+    color: #666;
 }
 
 .table-container {
@@ -34,6 +223,7 @@
 .readings-table th {
     background-color: #f8f9fa;
     font-weight: 600;
+    color: #2f855a;
 }
 
 .readings-table tr:hover {
@@ -44,46 +234,148 @@
     color: #333;
 }
 
+/* Pagination Controls */
+.pagination-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.pagination-info {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.pagination-buttons {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.pagination-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    background-color: #2f855a;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background-color: #38a169;
+}
+
+.pagination-btn:disabled {
+    background-color: #a0aec0;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.pagination-page-info {
+    color: #333;
+    font-weight: 500;
+}
+
+.items-per-page {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.items-per-page label {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.items-per-page select {
+    padding: 0.4rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+}
+
+.no-data-message {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+.node-select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+    appearance: menulist; /* Default dropdown arrow */
+    cursor: pointer;
+}
+
+.node-select:focus {
+    outline: none;
+    border-color: #2f855a;
+    box-shadow: 0 0 0 1px #2f855a;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .readings-container {
         padding: 1rem;
     }
     
+    .header-row, .subheader-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .button-group {
+        width: 100%;
+    }
+    
+    .filter-row {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
     .readings-table th,
     .readings-table td {
         padding: 0.75rem;
     }
-}
-
-/* Pagination styles */
-.pagination {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    margin-top: 20px;
-}
-
-.pagination-button {
-    padding: 8px 12px;
-    background-color: #2f855a;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.pagination-button:hover {
-    background-color: #38a169;
-}
-
-.pagination-button:disabled {
-    background-color: #c6f6d5;
-    color: #2f855a;
-    cursor: not-allowed;
-}
-
-.pagination-info {
-    font-size: 14px;
+    
+    .modal-footer {
+        flex-direction: column;
+    }
+    
+    .cancel-btn, .apply-btn {
+        width: 100%;
+    }
+    
+    .pagination-controls {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+    }
+    
+    .pagination-buttons {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .items-per-page {
+        width: 100%;
+        justify-content: flex-end;
+    }
 }

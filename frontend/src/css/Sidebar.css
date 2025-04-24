@@ -37,6 +37,11 @@ html, body {
     background-color: #4bdf92;
   }
 
+  .sidebar button.active {
+    background-color: #4bdf92;
+    font-weight: bold;
+  }
+
   .sidebar button .fa-icon {
     margin-right: 10px;
   }
