@@ -147,3 +147,111 @@ class AvailableNodesView(APIView):
                 {"error": f"Failed to fetch available nodes: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class NodeDateRangeView(APIView):
+    """API endpoint for retrieving available date range for a specific node"""
+    
+    def get(self, request):
+        """Get min and max dates for a node"""
+        node_id = request.query_params.get('node')
+        
+        if not node_id:
+            return Response(
+                {"error": "Node ID parameter is required"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            firebase_service = FirebaseService()
+            db_ref = firebase_service.db_ref
+            
+            # Reference to the node
+            node_ref = db_ref.child(node_id)
+            
+            # Get all years for this node (shallow to be efficient)
+            years = node_ref.get(shallow=True)
+            
+            if not years:
+                return Response({"min_date": None, "max_date": None})
+            
+            try:
+                # Find min and max years - filter only numeric keys
+                numeric_years = [int(year) for year in years.keys() if year.isdigit()]
+                
+                if not numeric_years:
+                    return Response({"min_date": None, "max_date": None})
+                    
+                min_year = min(numeric_years)
+                max_year = max(numeric_years)
+                
+                # For min year, get min month
+                min_year_ref = node_ref.child(str(min_year))
+                min_year_months = min_year_ref.get(shallow=True) or {}
+                
+                if not min_year_months:
+                    return Response({"min_date": None, "max_date": None})
+                
+                numeric_months = [int(month) for month in min_year_months.keys() if month.isdigit()]
+                if not numeric_months:
+                    return Response({"min_date": None, "max_date": None})
+                    
+                min_month = min(numeric_months)
+                
+                # For min year and min month, get min day
+                min_month_ref = min_year_ref.child(str(min_month).zfill(2))
+                min_month_days = min_month_ref.get(shallow=True) or {}
+                
+                if not min_month_days:
+                    return Response({"min_date": None, "max_date": None})
+                
+                numeric_days = [int(day) for day in min_month_days.keys() if day.isdigit()]
+                if not numeric_days:
+                    return Response({"min_date": None, "max_date": None})
+                    
+                min_day = min(numeric_days)
+                
+                # For max year, get max month
+                max_year_ref = node_ref.child(str(max_year))
+                max_year_months = max_year_ref.get(shallow=True) or {}
+                
+                if not max_year_months:
+                    return Response({"min_date": None, "max_date": None})
+                
+                numeric_months = [int(month) for month in max_year_months.keys() if month.isdigit()]
+                if not numeric_months:
+                    return Response({"min_date": None, "max_date": None})
+                    
+                max_month = max(numeric_months)
+                
+                # For max year and max month, get max day
+                max_month_ref = max_year_ref.child(str(max_month).zfill(2))
+                max_month_days = max_month_ref.get(shallow=True) or {}
+                
+                if not max_month_days:
+                    return Response({"min_date": None, "max_date": None})
+                
+                numeric_days = [int(day) for day in max_month_days.keys() if day.isdigit()]
+                if not numeric_days:
+                    return Response({"min_date": None, "max_date": None})
+                    
+                max_day = max(numeric_days)
+                
+                # Format dates as YYYY-MM-DD
+                min_date = f"{min_year}-{str(min_month).zfill(2)}-{str(min_day).zfill(2)}"
+                max_date = f"{max_year}-{str(max_month).zfill(2)}-{str(max_day).zfill(2)}"
+                
+                return Response({
+                    "min_date": min_date,
+                    "max_date": max_date
+                })
+            except (ValueError, KeyError, TypeError) as e:
+                # Handle specific errors in processing the data structure
+                print(f"Error processing date hierarchy: {e}")
+                return Response({"min_date": None, "max_date": None})
+                
+        except Exception as e:
+            print(f"Failed to fetch date range: {str(e)}")
+            return Response(
+                {"error": f"Failed to fetch date range: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

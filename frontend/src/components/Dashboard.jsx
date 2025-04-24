@@ -26,12 +26,14 @@ const Dashboard = () => {
   const [dateRange, setDateRange] = useState('day'); // Default date range
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', content: '' });
-  const [availableNodes, setAvailableNodes] = useState([]); // Added missing state variable
+  const [availableNodes, setAvailableNodes] = useState([]);
   const [selectedNode, setSelectedNode] = useState('C-1'); // Default selected node
   const [startDate, setStartDate] = useState('2025-03-10'); // Default start date
   const [endDate, setEndDate] = useState('2025-03-10'); // Default end date
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingNodes, setIsLoadingNodes] = useState(true);
+  const [isLoadingDateRange, setIsLoadingDateRange] = useState(false);
+  const [shouldFetchData, setShouldFetchData] = useState(false); // New state to control when to fetch data
 
   // Fetch available nodes from Backend API
   useEffect(() => {
@@ -58,6 +60,69 @@ const Dashboard = () => {
     
     fetchAvailableNodes();
   }, []); // Run once on component mount
+
+  // Fetch date range for selected node
+  useEffect(() => {
+    const fetchDateRange = async () => {
+      if (!selectedNode) return;
+      
+      try {
+        setIsLoadingDateRange(true);
+        const response = await axios.get(`${apiURL}node-date-range/?node=${selectedNode}`);
+        
+        if (response.data.min_date && response.data.max_date) {
+          console.log(`Date range for ${selectedNode}: ${response.data.min_date} to ${response.data.max_date}`);
+          setStartDate(response.data.min_date);
+          setEndDate(response.data.max_date);
+        } else {
+          // If the backend returns no dates, set a default date range
+          console.log(`No date range found for ${selectedNode}, using default dates`);
+          const today = new Date();
+          const oneWeekAgo = new Date(today);
+          oneWeekAgo.setDate(today.getDate() - 7);
+          
+          // Format as YYYY-MM-DD
+          const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          };
+          
+          setStartDate(formatDate(oneWeekAgo));
+          setEndDate(formatDate(today));
+        }
+        
+        // Signal that we should fetch data now that dates are updated
+        setShouldFetchData(true);
+        
+      } catch (error) {
+        console.error("Error fetching date range for node:", error);
+        // Set fallback date range on error
+        const today = new Date();
+        const oneWeekAgo = new Date(today);
+        oneWeekAgo.setDate(today.getDate() - 7);
+        
+        // Format as YYYY-MM-DD
+        const formatDate = (date) => {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+        
+        setStartDate(formatDate(oneWeekAgo));
+        setEndDate(formatDate(today));
+        
+        // Signal that we should fetch data with these fallback dates
+        setShouldFetchData(true);
+      } finally {
+        setIsLoadingDateRange(false);
+      }
+    };
+    
+    fetchDateRange();
+  }, [selectedNode, apiURL]); // Run when selected node changes
 
   // Function for backend anomaly detection
   const processAnomalies = async (rawData) => {
@@ -93,12 +158,17 @@ const Dashboard = () => {
     }
   };
 
+  // Separate useEffect to fetch Firebase data only when shouldFetchData is true
   useEffect(() => {
+    if (!shouldFetchData) return;
+    
     const fetchFirebaseData = async () => {
       setIsLoading(true);
       setReadings([]); // Clear previous readings
       
       try {
+        console.log(`Fetching data for ${selectedNode} from ${startDate} to ${endDate}`);
+        
         // Generate array of dates between startDate and endDate
         const dateRange = getDatesInRange(new Date(startDate), new Date(endDate));
         let allReadings = [];
@@ -175,29 +245,31 @@ const Dashboard = () => {
         console.error("Error processing Firebase data:", err);
       } finally {
         setIsLoading(false);
+        // Reset the fetch flag after fetching
+        setShouldFetchData(false);
       }
-    };
-  
-    // Helper function to get all dates in a range
-    const getDatesInRange = (startDate, endDate) => {
-      const dates = [];
-      const currentDate = new Date(startDate);
-      
-      // Add one day to include the end date
-      const endDateTime = new Date(endDate);
-      endDateTime.setDate(endDateTime.getDate() + 1);
-      
-      while (currentDate < endDateTime) {
-        dates.push(new Date(currentDate));
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-      
-      return dates;
     };
   
     fetchFirebaseData();
     
-  }, [selectedNode, startDate, endDate, apiURL]); // Add apiURL to dependencies
+  }, [shouldFetchData, selectedNode, startDate, endDate, apiURL]); 
+
+  // Helper function to get all dates in a range
+  const getDatesInRange = (startDate, endDate) => {
+    const dates = [];
+    const currentDate = new Date(startDate);
+    
+    // Add one day to include the end date
+    const endDateTime = new Date(endDate);
+    endDateTime.setDate(endDateTime.getDate() + 1);
+    
+    while (currentDate < endDateTime) {
+      dates.push(new Date(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return dates;
+  };
 
   // Handler for graph type change
   const handleGraphTypeChange = (type) => {
@@ -207,15 +279,19 @@ const Dashboard = () => {
   // Handler for date range change
   const handleStartDateChange = (e) => {
     setStartDate(e.target.value);
+    setShouldFetchData(true); // Trigger data fetch when date changes manually
   };
   
   const handleEndDateChange = (e) => {
     setEndDate(e.target.value);
+    setShouldFetchData(true); // Trigger data fetch when date changes manually
   };
 
   // Handler for node selection change
   const handleNodeChange = (e) => {
     setSelectedNode(e.target.value);
+    // Date range will be updated by the useEffect that watches selectedNode
+    // The subsequent data fetch will happen after date ranges are updated
   };
 
   // Handler for PDF download
@@ -266,9 +342,14 @@ const Dashboard = () => {
               </select>
             </div>
             
-            {/* Date Range Selector remains the same */}
+            {/* Date Range Selector with loading state */}
             <div className="date-range-selector">
-              <div className="date-range-label">Date Range:</div>
+              <div className="date-range-label">
+                Date Range:
+                {isLoadingDateRange && (
+                  <span className="loading-indicator"> (Loading...)</span>
+                )}
+              </div>
               <div className="date-range-inputs">
                 <input 
                   type="date" 
@@ -276,6 +357,7 @@ const Dashboard = () => {
                   name="start-date"
                   value={startDate}
                   onChange={handleStartDateChange}
+                  disabled={isLoadingDateRange}
                 />
                 <span className="date-separator">-</span>
                 <input 
@@ -284,6 +366,7 @@ const Dashboard = () => {
                   name="end-date"
                   value={endDate}
                   onChange={handleEndDateChange}
+                  disabled={isLoadingDateRange}
                 />
               </div>
             </div>
@@ -295,10 +378,8 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Main Content Grid */}
+      {/* Rest of your component remains unchanged */}
       <div className="dashboard-content">
-
-        {/* Top row - Power quality metrics */}
         <div className="metric-cards-row">
           <PowerQualityStatus
             readings={readings}
@@ -330,17 +411,14 @@ const Dashboard = () => {
             onModalOpen={openModal}
           />
           
-          {/* Use AnomalyMetrics component to display anomaly information */}
           <AnomalyMetrics
             readings={readings}
             onModalOpen={openModal}
           />
         </div>
         
-        {/* Bottom row - Graph */}
         <div className="graph-row">
           <div className="graph-card">
-            {/* Graph header */}
             <div className="graph-header">
               <h3>
                 {graphType === 'powerFactor' 
@@ -382,7 +460,6 @@ const Dashboard = () => {
               </div>
             </div>
             
-            {/* Graph content */}
             <div className="graph-content">
               {isLoading ? (
                 <div className="graph-placeholder">

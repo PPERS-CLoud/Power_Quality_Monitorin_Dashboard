@@ -509,3 +509,9 @@
     gap: 20px;
     align-items: center;
 }
+
+.loading-indicator {
+    font-size: 0.85rem;
+    color: #666;
+    font-style: italic;
+}

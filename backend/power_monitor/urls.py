@@ -10,4 +10,5 @@ urlpatterns = [
     path('firebase/', views.FirebaseDataView.as_view(), name='firebase-data'),
     path('anomalies/', views.AnomalyDetectionView.as_view(), name='anomaly-detection'),
     path('available-nodes/', views.AvailableNodesView.as_view(), name='available-nodes'),
+    path('node-date-range/', views.NodeDateRangeView.as_view(), name='node-date-range'),
 ]
