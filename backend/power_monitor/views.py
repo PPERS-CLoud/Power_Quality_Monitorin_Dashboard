@@ -6,6 +6,33 @@ from rest_framework.permissions import IsAuthenticated
 from .models import ElectricalParameter
 from .serializers import ElectricalParameterSerializer
 from .services.firebase_service import FirebaseService
+from .services.anomaly_service import AnomalyDetectionService
+
+class AnomalyDetectionView(APIView):
+    """API endpoint for anomaly detection"""
+    
+    def post(self, request):
+        """Detect anomalies in power readings"""
+        readings = request.data.get('readings', [])
+        thresholds = request.data.get('thresholds', None)
+        
+        if not readings:
+            return Response(
+                {"error": "No readings provided"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Process readings through anomaly detection
+        service = AnomalyDetectionService(thresholds)
+        processed_readings = service.detect_anomalies(readings)
+        
+        # Count anomalies
+        anomaly_count = sum(1 for r in processed_readings if r.get('is_anomaly', False))
+        
+        return Response({
+            'readings': processed_readings,
+            'anomaly_count': anomaly_count,
+        })
 
 # Create your views here.
 
@@ -62,3 +89,29 @@ class FirebaseDataView(APIView):
             return Response(response_data, status=status.HTTP_201_CREATED)
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AnomalyDetectionView(APIView):
+    """API endpoint for anomaly detection"""
+    
+    def post(self, request):
+        """Detect anomalies in power readings"""
+        readings = request.data.get('readings', [])
+        thresholds = request.data.get('thresholds', None)
+        
+        if not readings:
+            return Response(
+                {"error": "No readings provided"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Process readings through anomaly detection
+        service = AnomalyDetectionService(thresholds)
+        processed_readings = service.detect_anomalies(readings)
+        
+        # Count anomalies
+        anomaly_count = sum(1 for r in processed_readings if r.get('is_anomaly', False))
+        
+        return Response({
+            'readings': processed_readings,
+            'anomaly_count': anomaly_count,
+        })

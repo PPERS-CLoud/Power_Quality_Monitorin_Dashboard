@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { database } from '../services/firebase';
-import { ref, onValue, query, orderByKey, limitToLast } from 'firebase/database';
+import { ref, onValue } from 'firebase/database';
 import '../css/Dashboard.css';
 import PowerGraph from './PowerGraph';
 import InterruptionMetrics from './InterruptionMetrics';
 import PowerQualityStatus from './PowerQualityStatus';
+import AnomalyMetrics from './AnomalyMetrics';
+import '../css/AnomalyMetrics.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faFileDownload, 
@@ -28,6 +30,40 @@ const Dashboard = () => {
   const [startDate, setStartDate] = useState('2025-03-10'); // Default start date
   const [endDate, setEndDate] = useState('2025-03-10'); // Default end date
   const [isLoading, setIsLoading] = useState(false);
+
+  // Function for backend anomaly detection
+  const processAnomalies = async (rawData) => {
+    try {
+      // Configure your thresholds
+      // Use more realistic thresholds based on your actual data
+      const thresholds = {
+        'voltage': {'min': 200, 'max': 240},       // Widen range
+        'current': {'min': 0, 'max': 50},          // Increase max
+        'power': {'min': 0, 'max': 10000},         // Increase max
+        'frequency': {'min': 59.0, 'max': 61.0},   // Widen range
+        'power_factor': {'min': 0.70, 'max': 1.0}  // Lower min threshold
+      };
+      
+      console.log("Sending data to backend for anomaly detection:", rawData.length, "readings");
+      
+      // Send data to backend for processing
+      const response = await axios.post(
+        `${apiURL}anomalies/`, 
+        { 
+          readings: rawData,
+          thresholds: thresholds
+        }
+      );
+      
+      console.log("Anomaly processing complete. Found:", 
+        response.data.anomaly_count, "anomalies");
+      
+      return response.data.readings;
+    } catch (error) {
+      console.error("Error processing anomalies:", error);
+      return rawData; // Return original data if backend processing fails
+    }
+  };
 
   useEffect(() => {
     const fetchFirebaseData = async () => {
@@ -92,12 +128,16 @@ const Dashboard = () => {
         // Sort by timestamp (newest first)
         allReadings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         
-        setReadings(allReadings);
-        
-        // Set the latest reading
+        // Process the data through backend anomaly detection
         if (allReadings.length > 0) {
-          setLatestReading(allReadings[0]);
+          console.log("Processing", allReadings.length, "readings for anomalies");
+          const processedData = await processAnomalies(allReadings);
+          setReadings(processedData);
+          
+          // Set the latest reading
+          setLatestReading(processedData[0]);
         } else {
+          setReadings([]);
           setLatestReading(null);
           console.log(`No data found for ${selectedNode} in date range ${startDate} to ${endDate}`);
         }
@@ -128,13 +168,7 @@ const Dashboard = () => {
   
     fetchFirebaseData();
     
-    // No need for cleanup since we're using onlyOnce: true
-  }, [selectedNode, startDate, endDate]);
-
-  // Calculate metrics
-  const countAnomalies = () => {
-    return readings.filter(reading => reading.is_anomaly).length;
-  };
+  }, [selectedNode, startDate, endDate, apiURL]); // Add apiURL to dependencies
 
   // Handler for graph type change
   const handleGraphTypeChange = (type) => {
@@ -237,47 +271,40 @@ const Dashboard = () => {
               voltage: { 
                 min: 210, 
                 max: 230, 
-                ideal: { min: 218, max: 222 } // Add ideal range
+                ideal: { min: 218, max: 222 }
               },
               frequency: { 
                 min: 59.5, 
                 max: 60.5, 
-                ideal: { min: 59.9, max: 60.1 } // Add ideal range
+                ideal: { min: 59.9, max: 60.1 }
               },
               powerFactor: { 
                 min: 0.85, 
-                ideal: 0.95 // Add ideal value
+                ideal: 0.95
               }
             }}
-            method="combined" // Use "combined" for comprehensive assessment
+            method="combined"
             onModalOpen={openModal}
           />
           
-          {/* Replace the two hardcoded interruption cards with the component */}
           <InterruptionMetrics 
             readings={readings}
-            voltageThreshold={218} // Just Change the Voltage Threshold Here
-            minDurationSec={30} // And the Duration
+            voltageThreshold={218}
+            minDurationSec={30}
             onModalOpen={openModal}
           />
           
-          <div className="metric-card large bg-gray">
-            <h3>Number of Anomalies</h3>
-            <p className="metric-value">{countAnomalies()}</p>
-            <div className="card-icon">
-              <FontAwesomeIcon icon={faExclamationCircle} />
-            </div>
-            <div className="more-info" onClick={() => openModal("Number of Anomalies", 
-              "Anomalies are unusual patterns in power metrics that may indicate potential issues. Regular monitoring helps prevent equipment damage.")}>
-              More info &gt;
-            </div>
-          </div>
+          {/* Replace hardcoded anomaly card with AnomalyMetrics component */}
+          <AnomalyMetrics
+            readings={readings}
+            onModalOpen={openModal}
+          />
         </div>
         
         {/* Bottom row - Graph */}
         <div className="graph-row">
           <div className="graph-card">
-            {/* Graph header as first row */}
+            {/* Graph header */}
             <div className="graph-header">
               <h3>
                 {graphType === 'powerFactor' 
@@ -319,7 +346,7 @@ const Dashboard = () => {
               </div>
             </div>
             
-            {/* Graph content as second row */}
+            {/* Graph content */}
             <div className="graph-content">
               {isLoading ? (
                 <div className="graph-placeholder">
