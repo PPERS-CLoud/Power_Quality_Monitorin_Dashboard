@@ -26,10 +26,38 @@ const Dashboard = () => {
   const [dateRange, setDateRange] = useState('day'); // Default date range
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', content: '' });
+  const [availableNodes, setAvailableNodes] = useState([]); // Added missing state variable
   const [selectedNode, setSelectedNode] = useState('C-1'); // Default selected node
   const [startDate, setStartDate] = useState('2025-03-10'); // Default start date
   const [endDate, setEndDate] = useState('2025-03-10'); // Default end date
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingNodes, setIsLoadingNodes] = useState(true);
+
+  // Fetch available nodes from Backend API
+  useEffect(() => {
+    const fetchAvailableNodes = async () => {
+      try {
+        setIsLoadingNodes(true);
+        const response = await axios.get(`${apiURL}available-nodes/`);
+        const nodes = response.data.nodes || [];
+        
+        setAvailableNodes(nodes);
+        console.log("Available nodes:", nodes);
+        
+        // If current selection is not available, select first available node
+        if (nodes.length > 0 && !nodes.includes(selectedNode)) {
+          setSelectedNode(nodes[0]);
+        }
+      } catch (error) {
+        console.error("Error fetching available nodes from backend:", error);
+        setAvailableNodes([]); // Empty array on error
+      } finally {
+        setIsLoadingNodes(false);
+      }
+    };
+    
+    fetchAvailableNodes();
+  }, []); // Run once on component mount
 
   // Function for backend anomaly detection
   const processAnomalies = async (rawData) => {
@@ -106,6 +134,7 @@ const Dashboard = () => {
                 allReadings.push({
                   id: `${year}-${month}-${day}-${time}`,
                   deviceId: selectedNode,
+                  node: selectedNode, // Add node property for consistency with other components
                   timestamp: `${year}-${month}-${day}T${time}`,
                   voltage: reading.voltage,
                   current: reading.current,
@@ -216,21 +245,28 @@ const Dashboard = () => {
         
         <div className="header-right">
           <div className="selector-container">
-            {/* Node Selection Dropdown */}
+            {/* Updated Node Selection Dropdown */}
             <div className="node-selector">
               <div className="node-label">Node:</div>
               <select 
                 className="node-dropdown"
                 value={selectedNode}
                 onChange={handleNodeChange}
+                disabled={isLoadingNodes}
               >
-                {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
-                  <option key={`C-${num}`} value={`C-${num}`}>C-{num}</option>
-                ))}
+                {isLoadingNodes ? (
+                  <option value="">Loading nodes...</option>
+                ) : availableNodes.length > 0 ? (
+                  availableNodes.map(node => (
+                    <option key={node} value={node}>{node}</option>
+                  ))
+                ) : (
+                  <option value="">No nodes available</option>
+                )}
               </select>
             </div>
             
-            {/* Date Range Selector */}
+            {/* Date Range Selector remains the same */}
             <div className="date-range-selector">
               <div className="date-range-label">Date Range:</div>
               <div className="date-range-inputs">
@@ -294,7 +330,7 @@ const Dashboard = () => {
             onModalOpen={openModal}
           />
           
-          {/* Replace hardcoded anomaly card with AnomalyMetrics component */}
+          {/* Use AnomalyMetrics component to display anomaly information */}
           <AnomalyMetrics
             readings={readings}
             onModalOpen={openModal}

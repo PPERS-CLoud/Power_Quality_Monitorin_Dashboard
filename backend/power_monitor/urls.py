@@ -9,4 +9,5 @@ urlpatterns = [
     path('parameters/<int:pk>/', views.ElectricalParameterDetail.as_view(), name='parameter-detail'),
     path('firebase/', views.FirebaseDataView.as_view(), name='firebase-data'),
     path('anomalies/', views.AnomalyDetectionView.as_view(), name='anomaly-detection'),
+    path('available-nodes/', views.AvailableNodesView.as_view(), name='available-nodes'),
 ]

@@ -7,6 +7,8 @@ import { faDownload, faFilter, faTimes, faSearch, faUndo, faChevronLeft, faChevr
 
 const PowerReadings = () => {
     const [readings, setReadings] = useState([]);
+    const [loading, setLoading] = useState(false); // Add this line to fix the error
+    const [error, setError] = useState(null); // Add this for error handling
     const [showFilters, setShowFilters] = useState(false);
     const [filters, setFilters] = useState({
         node: '',

@@ -214,30 +214,6 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
               </LineChart>
             </div>
           </div>
-
-          <div className="anomaly-table">
-            {chartData.some(d => d?.is_anomaly) && (
-              <>
-                <h4>Anomaly Details</h4>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>{graphType.charAt(0).toUpperCase() + graphType.slice(1)} ({unit})</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {chartData.filter(d => d?.is_anomaly).map((reading, index) => (
-                      <tr key={index} className="anomaly-row">
-                        <td>{new Date(reading.fullTimestamp).toLocaleString()}</td>
-                        <td>{reading[graphType]}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            )}
-          </div>
         </>
       ) : (
         <div className="no-data-message">

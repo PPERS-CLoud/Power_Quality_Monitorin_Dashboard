@@ -115,3 +115,35 @@ class AnomalyDetectionView(APIView):
             'readings': processed_readings,
             'anomaly_count': anomaly_count,
         })
+
+# Add this new view function
+class AvailableNodesView(APIView):
+    """API endpoint for retrieving available nodes from Firebase"""
+    
+    def get(self, request):
+        """Get list of available node IDs"""
+        try:
+            firebase_service = FirebaseService()
+            db_ref = firebase_service.db_ref
+            
+            # Just get the child nodes (keys) without their data
+            available_nodes = db_ref.get(shallow=True)
+            
+            if available_nodes:
+                # Filter keys that match the pattern 'C-XX'
+                nodes = [
+                    node for node in available_nodes.keys() 
+                    if isinstance(node, str) and node.startswith('C-')
+                ]
+                
+                # Sort nodes numerically
+                nodes.sort(key=lambda x: int(x.split('-')[1]) if x.split('-')[1].isdigit() else float('inf'))
+                
+                return Response({"nodes": nodes})
+            else:
+                return Response({"nodes": []})
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to fetch available nodes: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
