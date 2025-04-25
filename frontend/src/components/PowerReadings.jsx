@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import '../css/PowerReadings.css';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -14,15 +14,22 @@ import {
   faExclamationTriangle,
   faSpinner
 } from '@fortawesome/free-solid-svg-icons';
-// Add Firebase imports
-import { database } from '../services/firebase';
-import { ref, onValue } from 'firebase/database';
+
+// Replace direct Firebase imports with API URL
+const API_URL = import.meta.env.VITE_API_URL;
 
 const PowerReadings = () => {
+    // Keep state variables
     const [readings, setReadings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [showFilterModal, setShowFilterModal] = useState(false);
+    const [availableNodes, setAvailableNodes] = useState([]);
+    const [queryLimit, setQueryLimit] = useState(200); // Default limit per node
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [currentPage, setCurrentPage] = useState(1);
+    
+    // Keep filters state
     const [filters, setFilters] = useState({
         node: 'all',
         dateRange: { startDate: '', endDate: '' },
@@ -33,6 +40,7 @@ const PowerReadings = () => {
         frequency: { min: '', max: '' },
         anomalyOnly: false
     });
+    
     const [tempFilters, setTempFilters] = useState({
         node: 'all',
         dateRange: { startDate: '', endDate: '' },
@@ -44,69 +52,230 @@ const PowerReadings = () => {
         anomalyOnly: false
     });
     
-    // Pagination state
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(15);
-    
-    // VITE_API_URL=http://127.0.0.1:8000/api/; See the .env file in the frontend directory
-    const apiURL = `${import.meta.env.VITE_API_URL}`;
-
+    // Modified to fetch nodes from backend API
+    // Modified to fetch nodes from backend API without caching
     useEffect(() => {
-        // Reference to C-1 to get all dates/times
-        const powerReadingsRef = ref(database, 'C-1/2025/03/10');
-        
-        // Listen for changes
-        const unsubscribe = onValue(powerReadingsRef, (snapshot) => {
-            setLoading(true);
+        const fetchAvailableNodes = async () => {
             try {
-                const data = snapshot.val();
-                console.log('Firebase data:', data); // Debug: Check the data structure
+                // Remove all caching logic and directly fetch from API
+                console.log('Fetching nodes from API...');
+                const response = await axios.get(`${API_URL}firebase/nodes/`);
                 
-                if (data) {
-                    // Convert nested structure to flat array
-                    const flattenedData = [];
-                    
-                    // The data structure is 'C-1/year/month/day/timestamp'
-                    Object.keys(data).forEach(time => {
-                        const reading = data[time];
-                        flattenedData.push({
-                            id: `2025-03-10-${time}`,
-                            deviceId: 'C-1',
-                            timestamp: `2025-03-10T${time}`,
-                            voltage: reading.voltage,
-                            current: reading.current,
-                            power: reading.power,
-                            power_factor: reading.powerFactor,
-                            frequency: reading.frequency,
-                            is_anomaly: Boolean(reading.is_anomaly), // Ensure boolean
-                            location: 'BD-101' // Example location code
-                        });
-                    });
-                    
-                    // Sort by timestamp (newest first)
-                    flattenedData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                    console.log('Processed readings:', flattenedData);
-                    setReadings(flattenedData);
+                if (response.data && response.data.length > 0) {
+                    console.log(`Successfully found ${response.data.length} nodes:`, response.data);
+                    setAvailableNodes(response.data);
                 } else {
-                    setReadings([]);
+                    throw new Error("No valid nodes found in API response");
                 }
+            } catch (err) {
+                console.error('Error fetching nodes from API:', err);
+                // Use a set of known nodes as fallback
+                const fallbackNodes = ['C-1', 'C-2', 'C-3', 'C-4', 'C-5', 'C-6', 'C-7', 'C-8', 'C-9', 'C-11', 'C-13', 'C-14', 'C-15', 'C-16', 'C-17', 'C-18', 'C-19', 'C-20'];
+                console.log('Using fallback nodes:', fallbackNodes);
+                setAvailableNodes(fallbackNodes);
+            }
+        };
+        
+        fetchAvailableNodes();
+    }, []);
+
+    // Modified to fetch data from backend API
+    // Modified to fetch data from backend API
+    useEffect(() => {
+        if (availableNodes.length === 0) return;
+        
+        setLoading(true);
+        
+        // Modified fetchData function to include all filters in API requests
+        const fetchData = async () => {
+            try {
+                // Build a complete params object with all filters
+                const params = {
+                    limit: queryLimit,
+                    // Date range filters
+                    start_date: filters.dateRange.startDate || null,
+                    end_date: filters.dateRange.endDate || null,
+                    // Range filters
+                    voltage_min: filters.voltage.min || null,
+                    voltage_max: filters.voltage.max || null,
+                    current_min: filters.current.min || null,
+                    current_max: filters.current.max || null,
+                    power_min: filters.power.min || null,
+                    power_max: filters.power.max || null,
+                    power_factor_min: filters.powerFactor.min || null,
+                    power_factor_max: filters.powerFactor.max || null,
+                    frequency_min: filters.frequency.min || null,
+                    frequency_max: filters.frequency.max || null,
+                    // Boolean filters
+                    anomaly_only: filters.anomalyOnly || null
+                };
+
+                // Remove null/undefined values to keep the URL params clean
+                Object.keys(params).forEach(key => 
+                    (params[key] === null || params[key] === undefined) && delete params[key]
+                );
+
+                if (filters.node === 'all') {
+                    // For "all" nodes, fetch data for multiple nodes
+                    const nodesToFetch = availableNodes.slice(0, 5); // Limit to first 5 nodes for performance
+                    console.log(`Fetching data for multiple nodes: ${nodesToFetch.join(', ')}`);
+                    
+                    // Use the compare endpoint which handles multiple nodes
+                    params.nodes = nodesToFetch.join(',');
+                    params.limit = Math.ceil(queryLimit / nodesToFetch.length); // Split the limit between nodes
+                    
+                    console.log('Fetching data with params:', params);
+                    const response = await axios.get(`${API_URL}firebase/compare/`, { params });
+                    
+                    if (response.data && response.data.length > 0) {
+                        console.log(`Loaded ${response.data.length} readings for multiple nodes`);
+                        
+                        // Process the data
+                        const processedReadings = response.data.map(reading => ({
+                            id: reading.id || `${reading.deviceId}-${reading.timestamp}`,
+                            deviceId: reading.deviceId,
+                            timestamp: reading.timestamp,
+                            voltage: reading.voltage || 0,
+                            current: reading.current || 0,
+                            power: reading.power || 0,
+                            power_factor: reading.power_factor || 0,
+                            frequency: reading.frequency || 0,
+                            is_anomaly: reading.is_anomaly || false,
+                            location: reading.location || `BD-${reading.deviceId.slice(2)}`
+                        }));
+                        
+                        // Sort all readings by timestamp
+                        processedReadings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                        setReadings(processedReadings);
+                    } else {
+                        console.log(`No data found for multiple nodes in API response`);
+                        setReadings([]);
+                    }
+                } else {
+                    // Get specific node to fetch
+                    const nodeToFetch = filters.node;
+                    params.node = nodeToFetch;
+                    
+                    console.log(`Fetching data for node: ${nodeToFetch} with filters:`, params);
+                    
+                    // Fetch data from backend API with node parameter
+                    const response = await axios.get(`${API_URL}firebase/data/`, { params });
+                    
+                    if (response.data && response.data.length > 0) {
+                        console.log(`Loaded ${response.data.length} readings for ${nodeToFetch}`);
+                        
+                        // Map backend data to the format expected by the UI
+                        const processedReadings = response.data.map(reading => ({
+                            id: reading.id || `${reading.deviceId}-${reading.timestamp}`,
+                            deviceId: reading.deviceId || nodeToFetch,
+                            timestamp: reading.timestamp,
+                            voltage: reading.voltage || 0,
+                            current: reading.current || 0,
+                            power: reading.power || 0,
+                            power_factor: reading.power_factor || 0,
+                            frequency: reading.frequency || 0,
+                            is_anomaly: reading.is_anomaly || false,
+                            location: reading.location || `BD-${nodeToFetch.slice(2)}`
+                        }));
+                        
+                        // Sort after processing
+                        processedReadings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                        setReadings(processedReadings);
+                    } else {
+                        console.log(`No data found for ${nodeToFetch} in API response`);
+                        setReadings([]);
+                    }
+                }
+                
                 setError(null);
             } catch (err) {
-                console.error("Error processing data:", err);
-                setError("Failed to load real-time data");
+                console.error('Error fetching data from API:', err);
+                setError('Failed to load readings data: ' + (err.response?.data?.error || err.message));
             } finally {
                 setLoading(false);
             }
-        }, (err) => {
-            console.error("Database error:", err);
-            setError("Database connection error: " + err.message);
-            setLoading(false);
+        };
+        
+        fetchData();
+    }, [availableNodes, filters.node, queryLimit, filters.dateRange.startDate, filters.dateRange.endDate]);
+    // Load more function - modified to work with API
+    const loadMoreData = () => {
+        setLoading(true);
+        
+        setQueryLimit(prevLimit => {
+            const newLimit = prevLimit + 200;
+            console.log(`Increasing query limit to ${newLimit}`);
+            return newLimit;
         });
         
-        // Cleanup listener on component unmount
-        return () => unsubscribe();
-    }, []);
-
+        // No need to manually reset loading state as the useEffect that fetches data
+        // will handle that when it completes
+    };
+    
+    // Add the missing loadMultipleNodes function that's referenced in your UI
+    const loadMultipleNodes = async () => {
+        setLoading(true);
+        
+        try {
+            // Get current node and 2-3 additional nodes to compare
+            const currentNode = filters.node;
+            const otherNodes = availableNodes
+                .filter(node => node !== currentNode)
+                .slice(0, 3);
+            
+            const nodesToCompare = [currentNode, ...otherNodes];
+            console.log(`Comparing nodes: ${nodesToCompare.join(', ')}`);
+            
+            // Fetch data for multiple nodes
+            const response = await axios.get(`${API_URL}firebase/compare/`, {
+                params: {
+                    nodes: nodesToCompare.join(','),
+                    limit: 20 // Limit per node for performance
+                }
+            });
+            
+            if (response.data && response.data.length > 0) {
+                console.log(`Loaded ${response.data.length} readings for comparison`);
+                
+                // Process and set the readings
+                const processedReadings = response.data.map(reading => ({
+                    id: reading.id || `${reading.deviceId}-${reading.timestamp}`,
+                    deviceId: reading.deviceId,
+                    timestamp: reading.timestamp,
+                    voltage: reading.voltage || 0,
+                    current: reading.current || 0,
+                    power: reading.power || 0,
+                    power_factor: reading.power_factor || 0,
+                    frequency: reading.frequency || 0,
+                    is_anomaly: reading.is_anomaly || false,
+                    location: reading.location || `BD-${reading.deviceId.slice(2)}`
+                }));
+                
+                // Sort all readings by timestamp
+                processedReadings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                setReadings(processedReadings);
+                
+                // Update filter to show all nodes
+                setFilters(prev => ({
+                    ...prev,
+                    node: 'all'
+                }));
+            } else {
+                throw new Error("No data found for comparison");
+            }
+        } catch (err) {
+            console.error('Error comparing nodes:', err);
+            setError('Failed to load comparison data: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    // Keep the rest of your component as is...
+    // ...
+    
+    // Return statement and the rest of the component remain unchanged
+    
     // Apply filtering
     const filteredReadings = readings.filter(reading => {
         // Filter by node
@@ -370,6 +539,24 @@ const PowerReadings = () => {
                     </div>
                 </>
             )}
+
+            {/* Load More Button - Shows only when on the last page */}
+            {!loading && currentPage === totalPages && totalPages > 0 && (
+                <div className="load-more-container">
+                    <button 
+                        className="load-more-btn" 
+                        onClick={loadMoreData}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <><FontAwesomeIcon icon={faSpinner} className="spin" /> Loading...</>
+                        ) : (
+                            <>Load More Data <span className="load-more-count">+200</span></>
+                        )}
+                    </button>
+                    <p className="load-more-info">Currently showing {readings.length} records. Load more to see additional data.</p>
+                </div>
+            )}
             
             {/* Filter Modal */}
             {showFilterModal && (
@@ -383,6 +570,11 @@ const PowerReadings = () => {
                         </div>
                         <div className="filter-content">
                             <div className="filter-panel">
+                                <div className="note-box">
+                                    <p><strong>Note:</strong> For performance reasons, select a specific node to see its most recent data. 
+                                    Date range filtering is applied to the loaded data only.</p>
+                                </div>
+                                
                                 <div className="filter-row">
                                     <div className="filter-group">
                                         <label htmlFor="node-select">Node</label>
@@ -393,8 +585,8 @@ const PowerReadings = () => {
                                             onChange={(e) => handleFilterChange('node', null, e.target.value)}
                                         >
                                             <option value="all">All Nodes</option>
-                                            {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
-                                                <option key={`C-${num}`} value={`C-${num}`}>C-{num}</option>
+                                            {availableNodes.map(node => (
+                                                <option key={node} value={node}>{node}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -549,6 +741,20 @@ const PowerReadings = () => {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Data Debugging Info */}
+            {!loading && (
+                <div className="data-stats">
+                    <p>Found {availableNodes.length} nodes • Showing {readings.length} readings for {filters.node === 'all' ? 'all nodes' : filters.node}</p>
+                    
+                    {/* Optional compare button */}
+                    {availableNodes.length > 1 && filters.node !== 'all' && (
+                        <button className="compare-btn" onClick={loadMultipleNodes}>
+                            Compare with other nodes
+                        </button>
+                    )}
                 </div>
             )}
         </div>
