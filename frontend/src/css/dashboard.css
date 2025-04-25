@@ -330,6 +330,26 @@
     color: #666;
 }
 
+/* Loading spinner for graph */
+.loading-spinner-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  color: #2f855a;
+}
+
+.spinner-icon {
+  font-size: 2.5rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 /* Modal styles */
 .modal-overlay {
     position: fixed;

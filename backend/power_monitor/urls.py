@@ -1,16 +1,27 @@
-from django.urls import path
-from . import views
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import (
+    AnomalyDetectionView,
+    FirebaseDataView,
+    FirebaseNodesView,
+    FirebaseCompareView,
+    NodeDateRangeView,
+)
 
-app_name = 'power_monitor'
+# Create a router and register our ViewSets
+router = DefaultRouter()
 
+# Define URL patterns
 urlpatterns = [
-    path('', views.ElectricalParameterList.as_view(), name='home'),
-    path('parameters/', views.ElectricalParameterList.as_view(), name='parameter-list'),
-    path('parameters/<int:pk>/', views.ElectricalParameterDetail.as_view(), name='parameter-detail'),
-    path('firebase/', views.FirebaseDataView.as_view(), name='firebase-data'),
-    path('anomalies/', views.AnomalyDetectionView.as_view(), name='anomaly-detection'),
-    path('available-nodes/', views.AvailableNodesView.as_view(), name='available-nodes'),
-    path('node-date-range/', views.NodeDateRangeView.as_view(), name='node-date-range'),
-    path('time-series/', views.TimeSeriesDataView.as_view(), name='time-series-data'),
-    path('aggregated-data/', views.AggregatedNodeDataView.as_view(), name='aggregated-data'),
+    # Include router URLs
+    path('', include(router.urls)),
+    
+    # Direct view endpoints
+    path('anomalies/', AnomalyDetectionView.as_view(), name='anomalies'),
+    path('firebase/data/', FirebaseDataView.as_view(), name='firebase-data'),
+    path('firebase/nodes/', FirebaseNodesView.as_view(), name='firebase-nodes'),
+    path('firebase/compare/', FirebaseCompareView.as_view(), name='firebase-compare'),
+    path('firebase/date-range/', NodeDateRangeView.as_view(), name='firebase-date-range'),
+
+    # Add additional endpoints as needed
 ]

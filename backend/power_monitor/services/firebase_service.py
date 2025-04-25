@@ -1,6 +1,7 @@
 import os
 import firebase_admin
 from firebase_admin import credentials, db
+from datetime import datetime, timedelta
 
 class FirebaseService:
     _instance = None  # Singleton instance
@@ -15,7 +16,6 @@ class FirebaseService:
     def initialize(self):
         """Initialize Firebase."""
         BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        # Should be (looking at your workspace files)
         FIREBASE_CRED_PATH = os.path.join(BASE_DIR, 'firebase', 'firebase.json')
         
         if not firebase_admin._apps:
@@ -44,48 +44,251 @@ class FirebaseService:
             print(f"Error adding power reading: {e}")
             return False
 
-# class AggregatedNodeDataView(APIView):
-#     """API endpoint for retrieving aggregated node data"""
-    
-#     def get(self, request):
-#         """Get aggregated data for a node within a date range"""
-#         node_id = request.query_params.get('node')
-#         start_date = request.query_params.get('start_date')
-#         end_date = request.query_params.get('end_date')
-#         resolution = request.query_params.get('resolution', 'hour')  # 'minute', 'hour', 'day'
-        
-#         if not all([node_id, start_date, end_date]):
-#             return Response(
-#                 {"error": "Missing parameters"}, 
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-            
-#         try:
-#             firebase_service = FirebaseService()
-#             db_ref = firebase_service.db_ref
-            
-#             # Convert date strings to datetime objects
-#             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-#             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            
-#             # Calculate date difference
-#             date_diff = (end_dt - start_dt).days
-            
-#             # Automatically adjust resolution based on date range
-#             if date_diff > 30:
-#                 resolution = 'day'  # Use daily aggregation for ranges > 30 days
-#             elif date_diff > 7:
-#                 resolution = 'hour'  # Use hourly aggregation for ranges > 7 days
+    # Enhanced methods from updated branch
+    def get_power_readings(self, node=None, limit=50, start_date=None, end_date=None,
+                      voltage_min=None, voltage_max=None, current_min=None, current_max=None,
+                      power_min=None, power_max=None, power_factor_min=None, power_factor_max=None,
+                      frequency_min=None, frequency_max=None, anomaly_only=None):
+        """Fetch power readings from Firebase with extensive filtering."""
+        try:
+            if node:
+                print(f"Fetching readings for node: {node}, limit: {limit}, date range: {start_date} to {end_date}")
+                print(f"Additional filters - voltage: {voltage_min}-{voltage_max}, current: {current_min}-{current_max}, " +
+                    f"power: {power_min}-{power_max}, pf: {power_factor_min}-{power_factor_max}, " +
+                    f"freq: {frequency_min}-{frequency_max}, anomaly_only: {anomaly_only}")
                 
-#             # Fetch and aggregate data
-#             aggregated_data = firebase_service.get_aggregated_readings(
-#                 node_id, start_date, end_date, resolution
-#             )
+                # Try multiple days if date range is not specified
+                all_readings = []
+                processed_readings = []
+                
+                # Define potential date paths to check
+                date_paths = []
+                
+                # If date range is specified, use those dates
+                if start_date and end_date:
+                    try:
+                        # Parse the dates
+                        start = datetime.strptime(start_date, '%Y-%m-%d')
+                        end = datetime.strptime(end_date, '%Y-%m-%d')
+                        
+                        # Generate dates between start and end
+                        current_date = start
+                        while current_date <= end:
+                            date_paths.append({
+                                'year': current_date.strftime('%Y'),
+                                'month': current_date.strftime('%m'),
+                                'day': current_date.strftime('%d')
+                            })
+                            current_date += timedelta(days=1)
+                        
+                        print(f"Generated {len(date_paths)} date paths from date range")
+                    except Exception as e:
+                        print(f"Error parsing date range: {e}")
+                        # Fall back to default dates
+                        date_paths = [
+                            {'year': '2025', 'month': '03', 'day': '10'}
+                        ]
+                else:
+                    # Default: try several date paths if no date range specified
+                    date_paths = [
+                        {'year': '2025', 'month': '03', 'day': '10'},  # Original hardcoded date
+                        {'year': '2025', 'month': '03', 'day': '11'},  # Try one day later
+                        {'year': '2025', 'month': '03', 'day': '09'},  # Try one day earlier
+                        {'year': '2025', 'month': '03', 'day': '08'},  # Try two days earlier
+                    ]
+                    
+                    # Also try current year dates
+                    today = datetime.now()
+                    for i in range(5):  # Try today and 4 days before
+                        day_to_check = today - timedelta(days=i)
+                        date_paths.append({
+                            'year': day_to_check.strftime('%Y'),
+                            'month': day_to_check.strftime('%m'),
+                            'day': day_to_check.strftime('%d')
+                        })
+                
+                # Try each date path until we get enough readings or run out of paths
+                readings_found = 0
+                for date_info in date_paths:
+                    if readings_found >= limit:
+                        break
+                        
+                    try:
+                        # Construct path for this date
+                        path = f"{node}/{date_info['year']}/{date_info['month']}/{date_info['day']}"
+                        print(f"Checking Firebase path: {path}")
+                        
+                        # Query Firebase with remaining limit
+                        remaining_limit = limit * 2  # Get more than we need for filtering
+                        readings_ref = self.db_ref.child(path).order_by_key().limit_to_first(remaining_limit)
+                        readings_data = readings_ref.get()
+                        
+                        if readings_data:
+                            print(f"Found {len(readings_data)} raw readings at {path}")
+                            
+                            # Process data for this date
+                            for time, reading in readings_data.items():
+                                try:
+                                    # Skip processing if not a dict (common in Firebase)
+                                    if not isinstance(reading, dict):
+                                        continue
+                                        
+                                    # Create a processed reading object
+                                    processed_reading = {
+                                        'id': f"{node}-{date_info['year']}-{date_info['month']}-{date_info['day']}-{time}",
+                                        'deviceId': node,
+                                        'node': node,
+                                        'timestamp': f"{date_info['year']}-{date_info['month']}-{date_info['day']}T{time}",
+                                        'voltage': float(reading.get('voltage', 0)),
+                                        'current': float(reading.get('current', 0)),
+                                        'power': float(reading.get('power', 0)),
+                                        'power_factor': float(reading.get('powerFactor', 0)),
+                                        'frequency': float(reading.get('frequency', 0)),
+                                        'is_anomaly': bool(reading.get('is_anomaly', False)),
+                                        'location': reading.get('location', f"BD-{node[2:]}")
+                                    }
+                                    
+                                    # Apply all the filters here on the backend
+                                    # Voltage filter
+                                    if voltage_min and processed_reading['voltage'] < float(voltage_min):
+                                        continue
+                                    if voltage_max and processed_reading['voltage'] > float(voltage_max):
+                                        continue
+                                    
+                                    # Current filter
+                                    if current_min and processed_reading['current'] < float(current_min):
+                                        continue
+                                    if current_max and processed_reading['current'] > float(current_max):
+                                        continue
+                                    
+                                    # Power filter
+                                    if power_min and processed_reading['power'] < float(power_min):
+                                        continue
+                                    if power_max and processed_reading['power'] > float(power_max):
+                                        continue
+                                    
+                                    # Power factor filter
+                                    if power_factor_min and processed_reading['power_factor'] < float(power_factor_min):
+                                        continue
+                                    if power_factor_max and processed_reading['power_factor'] > float(power_factor_max):
+                                        continue
+                                    
+                                    # Frequency filter
+                                    if frequency_min and processed_reading['frequency'] < float(frequency_min):
+                                        continue
+                                    if frequency_max and processed_reading['frequency'] > float(frequency_max):
+                                        continue
+                                    
+                                    # Anomaly filter
+                                    if anomaly_only and not processed_reading['is_anomaly']:
+                                        continue
+                                    
+                                    # If it passed all filters, add to filtered readings
+                                    processed_readings.append(processed_reading)
+                                    readings_found += 1
+                                    
+                                    # If we've reached our limit after filtering, stop
+                                    if readings_found >= limit:
+                                        break
+                                        
+                                except Exception as e:
+                                    print(f"Error processing reading at {path}/{time}: {e}")
+                            
+                        else:
+                            print(f"No readings found at path {path}")
+                            
+                    except Exception as e:
+                        print(f"Error checking path {path}: {e}")
+                
+                # If we found any filtered readings, return them
+                if processed_readings:
+                    print(f"Returning {len(processed_readings)} filtered readings for node {node}")
+                    return processed_readings
+                else:
+                    print(f"No readings match filters for node {node}")
+                    return []
+                    
+            else:
+                # Handle case without a specific node
+                print("No node specified for power readings query")
+                return []
+                    
+        except Exception as e:
+            print(f"Error fetching power readings: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def get_available_nodes(self):
+        """Get list of available nodes from Firebase."""
+        try:
+            print("Attempting to fetch available nodes from Firebase...")
+            # First try the simplest approach - get all top-level keys
+            root_data = self.db_ref.get()
             
-#             return Response(aggregated_data)
+            if not root_data:
+                print("No data found in Firebase root reference")
+                # Return fallback nodes if no data is found
+                fallback_nodes = [
+                    'C-1', 'C-2', 'C-3', 'C-4', 'C-5', 'C-6', 'C-7', 'C-8', 'C-9', 
+                    'C-11', 'C-13', 'C-14', 'C-15', 'C-16', 'C-17', 'C-18', 'C-19', 'C-20'
+                ]
+                print(f"Using fallback nodes: {fallback_nodes}")
+                return fallback_nodes
             
-#         except Exception as e:
-#             return Response(
-#                 {"error": f"Failed to fetch aggregated data: {str(e)}"},
-#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-#             )
+            # Filter for keys that look like node IDs (e.g., 'C-1', 'C-2', etc.)
+            valid_nodes = [key for key in root_data.keys() if key.startswith('C-')]
+            valid_nodes.sort()  # Sort for consistent display
+            
+            if valid_nodes:
+                print(f"Found {len(valid_nodes)} nodes in Firebase: {valid_nodes}")
+                return valid_nodes
+            else:
+                # Return fallback if no valid node patterns found
+                fallback_nodes = [
+                    'C-1', 'C-2', 'C-3', 'C-4', 'C-5', 'C-6', 'C-7', 'C-8', 'C-9', 
+                    'C-11', 'C-13', 'C-14', 'C-15', 'C-16', 'C-17', 'C-18', 'C-19', 'C-20'
+                ]
+                print(f"No valid nodes found. Using fallback nodes: {fallback_nodes}")
+                return fallback_nodes
+                
+        except Exception as e:
+            print(f"Error fetching available nodes: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Always return fallback nodes on error
+            fallback_nodes = [
+                'C-1', 'C-2', 'C-3', 'C-4', 'C-5', 'C-6', 'C-7', 'C-8', 'C-9', 
+                'C-11', 'C-13', 'C-14', 'C-15', 'C-16', 'C-17', 'C-18', 'C-19', 'C-20'
+            ]
+            print(f"Error occurred. Using fallback nodes: {fallback_nodes}")
+            return fallback_nodes
+
+    def get_comparison_data(self, nodes, limit=20):
+        """Get data for multiple nodes to compare."""
+        try:
+            if not nodes:
+                return []
+                
+            all_nodes_data = []
+            for node in nodes:
+                # Use existing get_power_readings with a smaller limit per node
+                node_data = self.get_power_readings(
+                    node=node,
+                    limit=limit
+                )
+                
+                if node_data:
+                    all_nodes_data.extend(node_data)
+                    
+            # Sort all combined data by timestamp, most recent first
+            all_nodes_data.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            return all_nodes_data
+            
+        except Exception as e:
+            print(f"Error fetching comparison data: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None

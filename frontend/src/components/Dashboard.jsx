@@ -38,7 +38,6 @@ const Dashboard = () => {
   const [shouldFetchData, setShouldFetchData] = useState(true); // Start with true to fetch data on load
   
   // Data handling and efficiency states
-  const [dataResolution, setDataResolution] = useState('auto'); // 'auto', 'minute', 'hour', 'day'
   const [actualResolution, setActualResolution] = useState('minute'); // The resolution actually used
   const [dataLoadProgress, setDataLoadProgress] = useState(0); 
   const [loadedDays, setLoadedDays] = useState([]);
@@ -176,13 +175,14 @@ const Dashboard = () => {
   const processAnomalies = useCallback(async (rawData) => {
     if (!rawData || rawData.length === 0) return [];
     
+    // Anomaly Thresholds for different parameters
     try {
       const thresholds = {
-        'voltage': {'min': 200, 'max': 240},
+        'voltage': {'min': 200, 'max': 245},
         'current': {'min': 0, 'max': 50},
         'power': {'min': 0, 'max': 10000},
         'frequency': {'min': 59.0, 'max': 61.0},
-        'power_factor': {'min': 0.70, 'max': 1.0}
+        'power_factor': {'min': 0.58, 'max': 1.0}
       };
       
       console.log("Sending data to backend for anomaly detection:", rawData.length, "readings");
@@ -215,7 +215,12 @@ const Dashboard = () => {
             console.log(`Batch ${i+1} complete. Found ${response.data.anomaly_count} anomalies`);
           } catch (error) {
             console.error(`Error processing batch ${i+1}:`, error);
-            processedData = [...processedData, ...batch]; // Use unprocessed data if failed
+            // If backend processing fails, maintain any existing anomaly information
+            processedData = [...processedData, ...batch.map(reading => ({
+              ...reading,
+              is_anomaly: reading.is_anomaly || false,
+              anomaly_parameters: reading.anomaly_parameters || []
+            }))];
           }
         }
         
@@ -234,7 +239,12 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error("Error processing anomalies:", error);
-      return rawData; // Return original data if processing fails
+      // If backend processing fails completely, maintain any existing anomaly information
+      return rawData.map(reading => ({
+        ...reading,
+        is_anomaly: reading.is_anomaly || false,
+        anomaly_parameters: reading.anomaly_parameters || []
+      }));
     }
   }, [apiURL]);
 
@@ -244,10 +254,16 @@ const Dashboard = () => {
       try {
         setIsLoadingNodes(true);
         
+        // Define a complete list of nodes for fallback
+        const allKnownNodes = [
+          'C-1', 'C-2', 'C-3', 'C-4', 'C-6', 'C-7', 'C-8', 'C-9',
+        ];
+        
         try {
-          // First try to get from backend API
-          const response = await axios.get(`${apiURL}available-nodes/`);
-          const nodes = response.data.nodes || [];
+          // First try to get from backend API - FIXED URL PATH
+          const response = await axios.get(`${apiURL}firebase/nodes/`);
+          console.log("API response:", response);
+          const nodes = response.data || [];
           
           if (nodes.length > 0) {
             console.log("Available nodes from backend API:", nodes);
@@ -263,16 +279,22 @@ const Dashboard = () => {
           console.warn("Falling back to direct Firebase access");
         }
         
-        // Fallback: Try to get nodes directly from Firebase
+        // Fallback: Try to get nodes directly from Firebase using shallow query
         try {
-          // List all root level keys in Firebase
+          console.log("Attempting shallow query to get Firebase node keys");
+          // Use shallow parameter to get only the keys
           const dbRef = ref(database);
-          const snapshot = await get(dbRef);
+          const snapshot = await get(dbRef, { shallow: true });
           
           if (snapshot.exists()) {
             const nodes = Object.keys(snapshot.val())
               .filter(key => key.startsWith('C-'))
-              .sort(); 
+              .sort((a, b) => {
+                // Sort numerically by the number after 'C-'
+                const numA = parseInt(a.split('-')[1]);
+                const numB = parseInt(b.split('-')[1]);
+                return numA - numB;
+              });
             
             console.log("Available nodes from Firebase:", nodes);
             if (nodes.length > 0) {
@@ -281,11 +303,21 @@ const Dashboard = () => {
               if (!nodes.includes(selectedNode)) {
                 setSelectedNode(nodes[0]);
               }
+              return;
             }
           }
         } catch (firebaseError) {
           console.error("Error fetching nodes from Firebase:", firebaseError);
-          console.log("Using default nodes: ['C-1', 'C-18']");
+          console.log("Using complete list of known nodes");
+        }
+        
+        // If both methods fail, use the complete list of known nodes
+        console.log("Using complete list of known nodes as fallback");
+        setAvailableNodes(allKnownNodes);
+        
+        // If current selected node isn't in the list, select the first one
+        if (!allKnownNodes.includes(selectedNode)) {
+          setSelectedNode(allKnownNodes[0]);
         }
         
       } finally {
@@ -294,7 +326,7 @@ const Dashboard = () => {
     };
     
     fetchAvailableNodes();
-  }, []); // Run once on component mount
+  }, [selectedNode]); // Include selectedNode as dependency
 
   // Fetch date range with fallback values for selected node
   useEffect(() => {
@@ -304,8 +336,9 @@ const Dashboard = () => {
       try {
         setIsLoadingDateRange(true);
         
+        // Try to get from backend API with the correct URL
         try {
-          const response = await axios.get(`${apiURL}node-date-range/?node=${selectedNode}`);
+          const response = await axios.get(`${apiURL}firebase/date-range/?node=${selectedNode}`);
           
           if (response.data.min_date && response.data.max_date) {
             console.log(`Date range for ${selectedNode}: ${response.data.min_date} to ${response.data.max_date}`);
@@ -318,6 +351,7 @@ const Dashboard = () => {
           console.error("Error fetching date range for node:", error);
         }
         
+        // Rest of the existing code remains the same
         // Node-specific defaults based on our knowledge
         if (selectedNode === 'C-1') {
           setStartDate('2025-03-10');
@@ -351,7 +385,7 @@ const Dashboard = () => {
     };
     
     fetchDateRange();
-  }, [selectedNode, apiURL]); // Run when selected node changes
+  }, [selectedNode, apiURL]);
 
   // Cleanup function for background processes
   useEffect(() => {
@@ -388,35 +422,12 @@ const Dashboard = () => {
         const dateRange = getDatesInRange(new Date(startDate), new Date(endDate));
         setLoadedDays([]); // Reset loaded days
         
-        // Determine sampling rate and mode based on resolution setting
-        let rate, mode;
+        // Always use automatic calculation based on date range
+        const calculated = calculateSamplingRate(startDate, endDate);
+        const rate = calculated.rate;
+        const mode = calculated.mode;
         
-        if (dataResolution === 'auto') {
-          // Use automatic calculation based on date range
-          const calculated = calculateSamplingRate(startDate, endDate);
-          rate = calculated.rate;
-          mode = calculated.mode;
-        } else {
-          // Use the manually selected resolution
-          mode = dataResolution;
-          
-          // Set appropriate sampling rates based on resolution
-          switch (dataResolution) {
-            case 'minute':
-              rate = 60; // Sample every minute (assuming data is per second)
-              break;
-            case 'hour':
-              rate = 3600; // Sample every hour
-              break;
-            case 'day':
-              rate = 86400; // Sample every day
-              break;
-            default:
-              rate = 1; // No sampling
-          }
-        }
-        
-        console.log(`Using ${dataResolution === 'auto' ? 'auto-calculated' : 'manually selected'} resolution: 1:${rate}, mode: ${mode}`);
+        console.log(`Using auto-calculated resolution: 1:${rate}, mode: ${mode}`);
         setActualResolution(mode);
         
         // Prepare for efficient loading
@@ -646,7 +657,7 @@ const Dashboard = () => {
     
   }, [shouldFetchData, selectedNode, startDate, endDate, calculateSamplingRate, 
       formatDateForPath, getDatesInRange, processAnomalies, sampleData, 
-      checkCache, addToCache, apiURL, dataResolution]);
+      checkCache, addToCache, apiURL]);
 
   // Handler for graph type change
   const handleGraphTypeChange = (type) => {
@@ -668,12 +679,6 @@ const Dashboard = () => {
   const handleNodeChange = (e) => {
     setSelectedNode(e.target.value);
     // Date range will be updated by the useEffect that watches selectedNode
-  };
-
-  // Handler for resolution change
-  const handleResolutionChange = (e) => {
-    setDataResolution(e.target.value);
-    setShouldFetchData(true); // Refetch with new resolution
   };
 
   // Handler for PDF download
@@ -753,22 +758,6 @@ const Dashboard = () => {
                   disabled={isLoadingDateRange || isLoading}
                 />
               </div>
-            </div>
-            
-            {/* Data Resolution Selector */}
-            <div className="resolution-selector">
-              <div className="resolution-label">Resolution:</div>
-              <select 
-                className="resolution-dropdown"
-                value={dataResolution}
-                onChange={handleResolutionChange}
-                disabled={isLoading}
-              >
-                <option value="auto">Auto</option>
-                <option value="minute">Minute</option>
-                <option value="hour">Hour</option>
-                <option value="day">Day</option>
-              </select>
             </div>
           </div>
           
@@ -911,7 +900,8 @@ const Dashboard = () => {
             <div className="graph-content">
               {isLoading ? (
                 <div className="graph-placeholder">
-                  <div className="graph-message">
+                  <div className="loading-spinner-container">
+                    <FontAwesomeIcon icon={faSpinner} className="spinner-icon" />
                     <p>Loading data...</p>
                     {dataLoadProgress > 0 && dataLoadProgress < 100 && (
                       <p>Progress: {Math.round(dataLoadProgress)}%</p>

@@ -1,10 +1,10 @@
-from django.shortcuts import render
-from rest_framework import generics, status
+from django.http import JsonResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from .models import ElectricalParameter
-from .serializers import ElectricalParameterSerializer
+from rest_framework import status
+from rest_framework.decorators import api_view
+from rest_framework.viewsets import ViewSet
+from rest_framework.decorators import action
 from .services.firebase_service import FirebaseService
 from .services.anomaly_service import AnomalyDetectionService
 
@@ -34,26 +34,22 @@ class AnomalyDetectionView(APIView):
             'anomaly_count': anomaly_count,
         })
 
-# Create your views here.
-
-class ElectricalParameterList(generics.ListCreateAPIView):
-    queryset = ElectricalParameter.objects.all()
-    serializer_class = ElectricalParameterSerializer
-    # permission_classes = [IsAuthenticated]
-
-class ElectricalParameterDetail(generics.RetrieveUpdateDestroyAPIView):
-    queryset = ElectricalParameter.objects.all()
-    serializer_class = ElectricalParameterSerializer
-    permission_classes = [IsAuthenticated]
-
-# New Firebase-specific views
-class FirebaseDataView(APIView):
-    """API view for accessing Firebase Realtime Database data."""
+# Option 1: Use ViewSet with @action decorators
+class FirebaseViewSet(ViewSet):
+    """ViewSet for handling Firebase data operations."""
     
-    def get(self, request):
-        """Get all power readings from Firebase."""
+    def list(self, request):
+        """Get power readings from Firebase with optional filters."""
         firebase_service = FirebaseService()
-        power_readings = firebase_service.get_power_readings()
+        
+        # Extract query parameters
+        node = request.query_params.get('node', None)
+        limit = int(request.query_params.get('limit', 50))
+        start_date = request.query_params.get('start_date', None)
+        end_date = request.query_params.get('end_date', None)
+        
+        # Get data from Firebase with filters
+        power_readings = firebase_service.get_power_readings(node, limit, start_date, end_date)
         
         if power_readings is None:
             return Response(
@@ -62,61 +58,184 @@ class FirebaseDataView(APIView):
             )
             
         return Response(power_readings)
-        
-    def post(self, request):
-        """Save power reading to both Django DB and Firebase."""
-        serializer = ElectricalParameterSerializer(data=request.data)
-        if serializer.is_valid():
-            # Save to Django DB
-            instance = serializer.save()
-            
-            # Save to Firebase
-            firebase_service = FirebaseService()
-            firebase_success = firebase_service.add_power_reading({
-                'timestamp': instance.timestamp.isoformat(),
-                'voltage': instance.voltage,
-                'current': instance.current,
-                'power': instance.power,
-                'power_factor': instance.power_factor,
-                'frequency': instance.frequency,
-                'is_anomaly': instance.is_anomaly
-            })
-            
-            response_data = serializer.data
-            if not firebase_success:
-                response_data['firebase_warning'] = "Data saved to Django DB but failed to save to Firebase"
-                
-            return Response(response_data, status=status.HTTP_201_CREATED)
-            
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class AnomalyDetectionView(APIView):
-    """API endpoint for anomaly detection"""
-    
-    def post(self, request):
-        """Detect anomalies in power readings"""
-        readings = request.data.get('readings', [])
-        thresholds = request.data.get('thresholds', None)
+    @action(detail=False, methods=['get'], url_path='nodes')
+    def get_nodes(self, request):
+        """Get list of available nodes from Firebase."""
+        firebase_service = FirebaseService()
+        nodes = firebase_service.get_available_nodes()
         
-        if not readings:
+        if nodes is None:
             return Response(
-                {"error": "No readings provided"}, 
+                {"error": "Failed to fetch nodes from Firebase"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+        return Response(nodes)
+
+    @action(detail=False, methods=['get'], url_path='compare')
+    def compare_nodes(self, request):
+        """Get data for multiple nodes to compare."""
+        firebase_service = FirebaseService()
+        
+        # Extract query parameters
+        nodes_param = request.query_params.get('nodes', '')
+        nodes = nodes_param.split(',') if nodes_param else []
+        limit = int(request.query_params.get('limit', 20))
+        
+        if not nodes:
+            return Response(
+                {"error": "No nodes specified for comparison"}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Process readings through anomaly detection
-        service = AnomalyDetectionService(thresholds)
-        processed_readings = service.detect_anomalies(readings)
+        # Get comparison data from Firebase
+        comparison_data = firebase_service.get_comparison_data(nodes, limit)
         
-        # Count anomalies
-        anomaly_count = sum(1 for r in processed_readings if r.get('is_anomaly', False))
-        
-        return Response({
-            'readings': processed_readings,
-            'anomaly_count': anomaly_count,
-        })
+        if comparison_data is None:
+            return Response(
+                {"error": "Failed to fetch comparison data from Firebase"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+        return Response(comparison_data)
 
-# Add this new view function
+# Option 2: Use separate APIView classes without @action decorators
+class FirebaseDataView(APIView):
+    """View for handling Firebase data operations."""
+    
+    def get(self, request):
+        """Get power readings from Firebase with extensive filtering."""
+        try:
+            firebase_service = FirebaseService()
+            
+            # Extract all query parameters
+            node = request.query_params.get('node')
+            limit = int(request.query_params.get('limit', 50))
+            
+            # Date parameters
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            
+            # Range parameters - voltage
+            voltage_min = request.query_params.get('voltage_min')
+            voltage_max = request.query_params.get('voltage_max')
+            
+            # Range parameters - current
+            current_min = request.query_params.get('current_min')
+            current_max = request.query_params.get('current_max')
+            
+            # Range parameters - power
+            power_min = request.query_params.get('power_min')
+            power_max = request.query_params.get('power_max')
+            
+            # Range parameters - power factor
+            power_factor_min = request.query_params.get('power_factor_min')
+            power_factor_max = request.query_params.get('power_factor_max')
+            
+            # Range parameters - frequency
+            frequency_min = request.query_params.get('frequency_min')
+            frequency_max = request.query_params.get('frequency_max')
+            
+            # Boolean parameters
+            anomaly_only = request.query_params.get('anomaly_only') == 'true'
+            
+            print(f"API request for node {node} with filters - date: {start_date} to {end_date}, voltage: {voltage_min}-{voltage_max}, current: {current_min}-{current_max}, power: {power_min}-{power_max}, pf: {power_factor_min}-{power_factor_max}, freq: {frequency_min}-{frequency_max}, anomaly_only: {anomaly_only}")
+            
+            # Get data from Firebase with filters
+            power_readings = firebase_service.get_power_readings(
+                node=node, 
+                limit=limit, 
+                start_date=start_date, 
+                end_date=end_date,
+                voltage_min=voltage_min,
+                voltage_max=voltage_max,
+                current_min=current_min,
+                current_max=current_max,
+                power_min=power_min,
+                power_max=power_max,
+                power_factor_min=power_factor_min,
+                power_factor_max=power_factor_max,
+                frequency_min=frequency_min,
+                frequency_max=frequency_max,
+                anomaly_only=anomaly_only
+            )
+            
+            if power_readings is None:
+                return Response(
+                    {"error": "Failed to fetch data from Firebase"}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+                
+            print(f"API response: {len(power_readings)} readings")
+            return Response(power_readings)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {"error": f"Server error: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class FirebaseNodesView(APIView):
+    """View for getting available nodes from Firebase."""
+    
+    def get(self, request):
+        """Get list of available nodes from Firebase."""
+        try:
+            firebase_service = FirebaseService()
+            nodes = firebase_service.get_available_nodes()
+            
+            # Always return a valid response, even if nodes is None
+            if nodes is None:
+                nodes = [
+                    'C-1', 'C-2', 'C-3', 'C-4', 'C-5', 'C-6', 'C-7', 'C-8', 'C-9', 
+                    'C-11', 'C-13', 'C-14', 'C-15', 'C-16', 'C-17', 'C-18', 'C-19', 'C-20'
+                ]
+            
+            return Response(nodes)
+        except Exception as e:
+            # Log the error but return fallback data
+            print(f"Error in FirebaseNodesView.get: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Return fallback nodes on any error
+            fallback_nodes = [
+                'C-1', 'C-2', 'C-3', 'C-4', 'C-5', 'C-6', 'C-7', 'C-8', 'C-9', 
+                'C-11', 'C-13', 'C-14', 'C-15', 'C-16', 'C-17', 'C-18', 'C-19', 'C-20'
+            ]
+            return Response(fallback_nodes)
+
+class FirebaseCompareView(APIView):
+    """View for comparing data from multiple nodes."""
+    
+    def get(self, request):
+        """Get data for multiple nodes to compare."""
+        firebase_service = FirebaseService()
+        
+        # Extract query parameters
+        nodes_param = request.query_params.get('nodes', '')
+        nodes = nodes_param.split(',') if nodes_param else []
+        limit = int(request.query_params.get('limit', 20))
+        
+        if not nodes:
+            return Response(
+                {"error": "No nodes specified for comparison"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get comparison data from Firebase
+        comparison_data = firebase_service.get_comparison_data(nodes, limit)
+        
+        if comparison_data is None:
+            return Response(
+                {"error": "Failed to fetch comparison data from Firebase"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+        return Response(comparison_data)
+
 class AvailableNodesView(APIView):
     """API endpoint for retrieving available nodes from Firebase"""
     
@@ -253,352 +372,5 @@ class NodeDateRangeView(APIView):
             print(f"Failed to fetch date range: {str(e)}")
             return Response(
                 {"error": f"Failed to fetch date range: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-from datetime import datetime, timedelta
-import numpy as np
-
-class TimeSeriesDataView(APIView):
-    """API endpoint for efficient time-series data access"""
-    
-    def get(self, request):
-        """Get time-series data with dynamic resolution"""
-        node_id = request.query_params.get('node')
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        max_points = int(request.query_params.get('max_points', 5000))
-        
-        if not all([node_id, start_date, end_date]):
-            return Response(
-                {"error": "Missing parameters"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            firebase_service = FirebaseService()
-            db_ref = firebase_service.db_ref
-            
-            # Convert dates
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            
-            # Add one day to include the end date
-            end_dt = end_dt + timedelta(days=1)
-            
-            # Calculate date range
-            date_diff = (end_dt - start_dt).days
-            
-            # Estimate data points (assuming 86400 points per day)
-            estimated_points = date_diff * 86400
-            
-            # Calculate appropriate sampling rate
-            sampling_rate = max(1, estimated_points // max_points)
-            
-            # For very large ranges, use the PAA (Piecewise Aggregate Approximation) approach
-            use_paa = sampling_rate > 60
-            
-            # Initialize storage for results
-            time_series_data = []
-            total_points = 0
-            
-            # Process each day
-            current_date = start_dt
-            while current_date < end_dt:
-                year = current_date.year
-                month = str(current_date.month).zfill(2)
-                day = str(current_date.day).zfill(2)
-                
-                # Fetch data for this day
-                path = f"{node_id}/{year}/{month}/{day}"
-                day_data = db_ref.child(path).get()
-                
-                if day_data:
-                    if use_paa:
-                        # Apply PAA: Group data into windows and calculate statistics
-                        window_size = 3600  # 1 hour in seconds
-                        day_windows = self._apply_paa(day_data, window_size)
-                        time_series_data.extend(day_windows)
-                        total_points += len(day_windows)
-                    else:
-                        # Apply simple sampling: take every Nth reading
-                        sorted_times = sorted(day_data.keys())
-                        sampled_times = sorted_times[::sampling_rate]
-                        
-                        for time_key in sampled_times:
-                            reading = day_data[time_key]
-                            time_series_data.append({
-                                'timestamp': f"{year}-{month}-{day}T{time_key}",
-                                'voltage': float(reading.get('voltage', 0)),
-                                'current': float(reading.get('current', 0)),
-                                'power': float(reading.get('power', 0)),
-                                'power_factor': float(reading.get('powerFactor', 0)),
-                                'frequency': float(reading.get('frequency', 0)),
-                                'is_anomaly': reading.get('is_anomaly', False)
-                            })
-                            total_points += 1
-                
-                current_date += timedelta(days=1)
-            
-            return Response({
-                'time_series': time_series_data,
-                'meta': {
-                    'original_range_days': date_diff,
-                    'sampling_rate': sampling_rate,
-                    'points_returned': total_points,
-                    'approximation_method': 'PAA' if use_paa else 'uniform_sampling'
-                }
-            })
-        
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return Response(
-                {"error": f"Failed to fetch time-series data: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    def _apply_paa(self, day_data, window_size=3600):
-        """Apply Piecewise Aggregate Approximation to reduce data volume"""
-        # Group readings by hour (or other window)
-        windows = {}
-        
-        for time_key, reading in day_data.items():
-            # Extract hour from timestamp
-            hour = time_key.split(':')[0]
-            
-            if hour not in windows:
-                windows[hour] = {
-                    'voltage': [],
-                    'current': [],
-                    'power': [],
-                    'power_factor': [],
-                    'frequency': [],
-                    'anomalies': 0
-                }
-            
-            # Add values to appropriate hour bucket
-            windows[hour]['voltage'].append(float(reading.get('voltage', 0)))
-            windows[hour]['current'].append(float(reading.get('current', 0)))
-            windows[hour]['power'].append(float(reading.get('power', 0)))
-            windows[hour]['power_factor'].append(float(reading.get('powerFactor', 0)))
-            windows[hour]['frequency'].append(float(reading.get('frequency', 0)))
-            
-            if reading.get('is_anomaly', False):
-                windows[hour]['anomalies'] += 1
-        
-        # Calculate statistics for each window
-        result = []
-        for hour, data in windows.items():
-            # Calculate min, max, avg, std for each metric
-            stats = {}
-            for metric in ['voltage', 'current', 'power', 'power_factor', 'frequency']:
-                values = data[metric]
-                if values:
-                    stats[f"{metric}_min"] = min(values)
-                    stats[f"{metric}_max"] = max(values)
-                    stats[f"{metric}_avg"] = sum(values) / len(values)
-                    stats[f"{metric}_std"] = np.std(values) if len(values) > 1 else 0
-            
-            # Add window metadata
-            result.append({
-                'window_hour': hour,
-                'reading_count': len(data['voltage']),
-                'anomaly_count': data['anomalies'],
-                'has_anomalies': data['anomalies'] > 0,
-                **stats
-            })
-        
-        return result
-
-class AggregatedNodeDataView(APIView):
-    """API endpoint for retrieving aggregated node data"""
-    
-    def get(self, request):
-        """Get aggregated data for a node within a date range"""
-        node_id = request.query_params.get('node')
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        resolution = request.query_params.get('resolution', 'auto')  # 'auto', 'minute', 'hour', 'day'
-        
-        if not all([node_id, start_date, end_date]):
-            return Response(
-                {"error": "Missing parameters"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-            
-        try:
-            firebase_service = FirebaseService()
-            db_ref = firebase_service.db_ref
-            
-            # Convert date strings to datetime objects
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-            
-            # Calculate date difference
-            date_diff = (end_dt - start_dt).days + 1  # Include both start and end days
-            
-            # Automatically adjust resolution based on date range if set to auto
-            if resolution == 'auto':
-                if date_diff > 30:
-                    resolution = 'day'  # Use daily aggregation for ranges > 30 days
-                elif date_diff > 7:
-                    resolution = 'hour'  # Use hourly aggregation for ranges > 7 days
-                else:
-                    resolution = 'minute'  # Use minute resolution for shorter ranges
-            
-            print(f"Using {resolution} resolution for date range of {date_diff} days")
-            
-            # Initialize aggregated data array
-            aggregated_data = []
-            
-            # For each day in the date range
-            current_date = start_dt
-            while current_date <= end_dt:
-                year = current_date.year
-                month = str(current_date.month).zfill(2)
-                day = str(current_date.day).zfill(2)
-                
-                # Path to this day's data
-                path = f"{node_id}/{year}/{month}/{day}"
-                day_data = db_ref.child(path).get()
-                
-                if day_data:
-                    # Process data based on resolution
-                    if resolution == 'day':
-                        # Aggregate to one data point per day
-                        values = {
-                            'voltage': [],
-                            'current': [],
-                            'power': [],
-                            'powerFactor': [],
-                            'frequency': []
-                        }
-                        
-                        anomaly_count = 0
-                        
-                        # Collect all values for the day
-                        for time_key, reading in day_data.items():
-                            for param in values.keys():
-                                if param in reading:
-                                    try:
-                                        values[param].append(float(reading[param]))
-                                    except (ValueError, TypeError):
-                                        # Skip invalid values
-                                        pass
-                            
-                            # Count anomalies
-                            if reading.get('is_anomaly', False):
-                                anomaly_count += 1
-                        
-                        # Calculate averages
-                        if values['voltage']:  # Check if we have any data
-                            aggregated_reading = {
-                                'timestamp': f"{year}-{month}-{day}T00:00:00",
-                                'voltage': sum(values['voltage']) / len(values['voltage']) if values['voltage'] else 0,
-                                'current': sum(values['current']) / len(values['current']) if values['current'] else 0,
-                                'power': sum(values['power']) / len(values['power']) if values['power'] else 0,
-                                'power_factor': sum(values['powerFactor']) / len(values['powerFactor']) if values['powerFactor'] else 0,
-                                'frequency': sum(values['frequency']) / len(values['frequency']) if values['frequency'] else 0,
-                                'is_anomaly': anomaly_count > 0,
-                                'anomaly_count': anomaly_count,
-                                'sample_count': len(next(iter(values.values()), [])),
-                                'resolution': 'day'
-                            }
-                            
-                            aggregated_data.append(aggregated_reading)
-                        
-                    elif resolution == 'hour':
-                        # Aggregate by hour
-                        hours = {}
-                        
-                        # Group readings by hour
-                        for time_key, reading in day_data.items():
-                            hour = time_key.split(':')[0]
-                            
-                            if hour not in hours:
-                                hours[hour] = {
-                                    'values': {
-                                        'voltage': [],
-                                        'current': [],
-                                        'power': [],
-                                        'powerFactor': [],
-                                        'frequency': []
-                                    },
-                                    'anomaly_count': 0
-                                }
-                            
-                            # Add values to the appropriate hour bucket
-                            for param in hours[hour]['values'].keys():
-                                if param in reading:
-                                    try:
-                                        hours[hour]['values'][param].append(float(reading[param]))
-                                    except (ValueError, TypeError):
-                                        # Skip invalid values
-                                        pass
-                            
-                            # Count anomalies
-                            if reading.get('is_anomaly', False):
-                                hours[hour]['anomaly_count'] += 1
-                        
-                        # Calculate hourly averages
-                        for hour, data in hours.items():
-                            values = data['values']
-                            
-                            if values['voltage']:  # Check if we have data for this hour
-                                aggregated_reading = {
-                                    'timestamp': f"{year}-{month}-{day}T{hour}:00:00",
-                                    'voltage': sum(values['voltage']) / len(values['voltage']) if values['voltage'] else 0,
-                                    'current': sum(values['current']) / len(values['current']) if values['current'] else 0,
-                                    'power': sum(values['power']) / len(values['power']) if values['power'] else 0,
-                                    'power_factor': sum(values['powerFactor']) / len(values['powerFactor']) if values['powerFactor'] else 0,
-                                    'frequency': sum(values['frequency']) / len(values['frequency']) if values['frequency'] else 0,
-                                    'is_anomaly': data['anomaly_count'] > 0,
-                                    'anomaly_count': data['anomaly_count'],
-                                    'sample_count': len(next(iter(values.values()), [])),
-                                    'resolution': 'hour'
-                                }
-                                
-                                aggregated_data.append(aggregated_reading)
-                    else:
-                        # For minute resolution, sample the data but keep individual readings
-                        # This helps reduce data volume while maintaining granularity
-                        sample_rate = max(1, len(day_data) // 1000)  # Aim for ~1000 points per day max
-                        times = sorted(day_data.keys())
-                        
-                        for i, time_key in enumerate(times):
-                            if i % sample_rate == 0:  # Sample at the specified rate
-                                reading = day_data[time_key]
-                                
-                                try:
-                                    sample_reading = {
-                                        'timestamp': f"{year}-{month}-{day}T{time_key}",
-                                        'voltage': float(reading.get('voltage', 0)),
-                                        'current': float(reading.get('current', 0)),
-                                        'power': float(reading.get('power', 0)),
-                                        'power_factor': float(reading.get('powerFactor', 0)),
-                                        'frequency': float(reading.get('frequency', 0)),
-                                        'is_anomaly': reading.get('is_anomaly', False),
-                                        'resolution': 'minute'
-                                    }
-                                    
-                                    aggregated_data.append(sample_reading)
-                                except (ValueError, TypeError):
-                                    # Skip invalid readings
-                                    pass
-                
-                # Move to next day
-                current_date += timedelta(days=1)
-            
-            # Sort by timestamp
-            aggregated_data.sort(key=lambda x: x['timestamp'])
-            
-            return Response(aggregated_data)
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return Response(
-                {"error": f"Failed to fetch aggregated data: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
 
-const AnomalyMetrics = ({ readings = [], onModalOpen }) => {
+const AnomalyMetrics = ({ readings = [], onModalOpen, isProcessing = false }) => {
   // Use memoization for performance
   const { anomalyCount, anomalySummary, severityLevel } = useMemo(() => {
     // Filter anomalies
@@ -18,10 +18,13 @@ const AnomalyMetrics = ({ readings = [], onModalOpen }) => {
       power_factor: 0
     };
     
+    // Count parameter-specific anomalies
     anomalies.forEach(a => {
-      (a.anomaly_parameters || []).forEach(param => {
-        if (param in summary) summary[param]++;
-      });
+      if (Array.isArray(a.anomaly_parameters)) {
+        a.anomaly_parameters.forEach(param => {
+          if (param in summary) summary[param]++;
+        });
+      }
     });
     
     // Determine severity level
@@ -76,7 +79,7 @@ const AnomalyMetrics = ({ readings = [], onModalOpen }) => {
           }}
         />
       </div>
-      <div className="more-info" onClick={() => onModalOpen("Backend Anomaly Analysis", getModalContent())}>
+      <div className="more-info" onClick={() => onModalOpen("Parameter-Specific Anomaly Analysis", getModalContent())}>
         More info &gt;
       </div>
     </div>

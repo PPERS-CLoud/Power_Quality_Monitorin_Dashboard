@@ -1,15 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  Legend, Scatter, Brush
+  Legend, Scatter, Brush, ResponsiveContainer
 } from 'recharts';
 import '../css/PowerGraph.css';
 
-// Custom dot component to highlight anomalies
+// Custom dot component to highlight parameter-specific anomalies
 const CustomDot = (props) => {
-  const { cx, cy, payload } = props;
+  const { cx, cy, payload, graphType } = props;
   
-  if (payload && payload.is_anomaly) {
+  // Convert graphType to backend parameter name format (e.g. powerFactor to power_factor)
+  const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
+  
+  // Check if this specific parameter is anomalous
+  const isParamAnomalous = payload && 
+                          payload.is_anomaly && 
+                          payload.anomaly_parameters && 
+                          payload.anomaly_parameters.includes(paramName);
+  
+  if (isParamAnomalous) {
     return (
       <circle 
         cx={cx} 
@@ -24,6 +33,35 @@ const CustomDot = (props) => {
   
   // Regular data points are rendered by default
   return null;
+};
+
+// Custom dot renderer for Line component
+const LineDot = (props) => {
+  const { cx, cy, payload, fill, stroke, graphType } = props;
+  
+  // Convert graphType to backend parameter name format
+  const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
+  
+  // Check if this specific parameter is anomalous
+  const isParamAnomalous = payload && 
+                          payload.is_anomaly && 
+                          payload.anomaly_parameters && 
+                          payload.anomaly_parameters.includes(paramName);
+  
+  // Use red for parameter-specific anomalous points, default color for normal points
+  const dotColor = isParamAnomalous ? "#ff6b6b" : fill || stroke;
+  const dotStroke = isParamAnomalous ? "#e53e3e" : stroke;
+  
+  return (
+    <circle 
+      cx={cx} 
+      cy={cy} 
+      r={3} 
+      fill={dotColor}
+      stroke={dotStroke}
+      strokeWidth={1}
+    />
+  );
 };
 
 const PowerGraph = ({ readings, graphType, selectedNode }) => {
@@ -62,6 +100,9 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
           dataToRender = sortedData.filter((_, index) => index % samplingRate === 0);
         }
         
+        // Convert graphType to backend parameter name format for anomaly check
+        const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
+        
         return dataToRender.map(reading => ({
           // Include date information in the time display
           time: new Date(reading.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + 
@@ -69,7 +110,12 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
           fullTime: new Date(reading.timestamp).toLocaleString(), // Full date and time
           fullTimestamp: reading.timestamp,
           [graphType]: graphType === 'powerFactor' ? reading.power_factor : reading[graphType],
-          is_anomaly: reading.is_anomaly
+          is_anomaly: reading.is_anomaly,
+          anomaly_parameters: reading.anomaly_parameters || [],
+          // Add a specific flag for this parameter's anomaly state
+          isParamAnomalous: reading.is_anomaly && 
+                           reading.anomaly_parameters && 
+                           reading.anomaly_parameters.includes(paramName)
         }));
       } catch (err) {
         console.error("Error formatting data:", err);
@@ -125,96 +171,145 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
     }
   };
 
+  // Calculate fixed domain range for Y axis based on graph type
+  const getYAxisDomain = () => {
+    switch (graphType) {
+      case 'voltage':
+        return [200, 250]; // Standard voltage range for residential power
+      case 'current':
+        return [0, 20]; // Typical current range in Amperes
+      case 'power': {
+        // Dynamic calculation for power based on actual maximum
+        const upperBound = Math.ceil(stats.max * 1.1);
+        return [0, upperBound];
+      }
+      case 'frequency':
+        return [59, 61]; // Frequency range around 60Hz
+      case 'powerFactor':
+        return [0, 1]; // Power factor range from 0 to 1
+      default:
+        return [0, 100]; // Default range
+    }
+  };
+
   return (
     <div className="power-graph-container">
       {chartData.length > 0 ? (
-        <>
-          <div className="graph-stats">
-            <div className="stat-item">
-              <h4>Min</h4>
-              <p>{stats.min} {unit}</p>
-            </div>
-            <div className="stat-item">
-              <h4>Average</h4>
-              <p>{stats.avg} {unit}</p>
-            </div>
-            <div className="stat-item">
-              <h4>Max</h4>
-              <p>{stats.max} {unit}</p>
-            </div>
-            <div className="stat-item">
-              <h4>Data Points</h4>
-              <p>{chartData.length}</p>
-            </div>
-            {chartData.filter(d => d?.is_anomaly).length > 0 && (
-              <div className="stat-item anomaly-stat">
-                <h4>Anomalies</h4>
-                <p>{chartData.filter(d => d?.is_anomaly).length}</p>
+        <div className="two-column-layout">
+          {/* First Column - Stats and Anomalies */}
+          <div className="stats-column">
+            <h3 className="stats-title">Statistics</h3>
+            <div className="graph-stats">
+              <div className="stat-item">
+                <h4>Min</h4>
+                <p>{stats.min} {unit}</p>
               </div>
-            )}
-          </div>
-
-          <div className="chart-container">
-            {/* Replace ResponsiveContainer with div */}
-            <div style={{ width: '100%', height: 400 }}>
-              <LineChart
-                width={800}
-                height={400}
-                data={chartData}
-                margin={{ top: 10, right: 30, left: 20, bottom: 70 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" opacity={0.7} />
-                <XAxis 
-                  dataKey="time" 
-                  angle={-45} 
-                  textAnchor="end" 
-                  height={70} 
-                  tick={{ fontSize: 10 }} // Smaller font to fit more text
-                  interval={Math.floor(chartData.length / 10)} // Show fewer ticks for readability
-                />
-                <YAxis
-                  domain={['auto', 'auto']}
-                  label={{ 
-                    value: `${graphType.charAt(0).toUpperCase() + graphType.slice(1)} (${unit})`, 
-                    angle: -90, 
-                    position: 'insideLeft' 
-                  }}
-                />
-                <Tooltip 
-                  formatter={(value) => [`${value} ${unit}`, graphType.charAt(0).toUpperCase() + graphType.slice(1)]}
-                  labelFormatter={(time) => {
-                    const dataPoint = chartData.find(d => d.time === time);
-                    return dataPoint ? `Time: ${dataPoint.fullTime}` : time;
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey={graphType}
-                  stroke={getLineColor()}
-                  strokeWidth={2}
-                  activeDot={{ r: 6 }}
-                  dot={{ r: 3 }}
-                  isAnimationActive={false}
-                />
-                <Scatter 
-                  data={chartData.filter(d => d?.is_anomaly)} 
-                  fill="#ff6b6b" 
-                  shape={<CustomDot />}
-                />
-                <Legend 
-                  align="center" 
-                  verticalAlign="top" 
-                  height={36}
-                  payload={[
-                    { value: graphType.charAt(0).toUpperCase() + graphType.slice(1), type: 'line', color: getLineColor() },
-                    ...(chartData.some(d => d?.is_anomaly) ? [{ value: 'Anomalies', type: 'circle', color: '#ff6b6b' }] : [])
-                  ]}
-                />
-                <Brush dataKey="time" height={30} stroke={getLineColor()} />
-              </LineChart>
+              <div className="stat-item">
+                <h4>Average</h4>
+                <p>{stats.avg} {unit}</p>
+              </div>
+              <div className="stat-item">
+                <h4>Max</h4>
+                <p>{stats.max} {unit}</p>
+              </div>
+              <div className="stat-item">
+                <h4>Data Points</h4>
+                <p>{chartData.length}</p>
+              </div>
+              {/* Only count anomalies specific to this parameter */}
+              {chartData.filter(d => {
+                const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
+                return d?.is_anomaly && 
+                       d?.anomaly_parameters && 
+                       d.anomaly_parameters.includes(paramName);
+              }).length > 0 && (
+                <div className="stat-item anomaly-stat">
+                  <h4>Anomalies</h4>
+                  <p>{chartData.filter(d => {
+                    const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
+                    return d?.is_anomaly && 
+                           d?.anomaly_parameters && 
+                           d.anomaly_parameters.includes(paramName);
+                  }).length}</p>
+                </div>
+              )}
             </div>
           </div>
-        </>
+          
+          {/* Second Column - Graph */}
+          <div className="graph-column">
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={chartData}
+                  margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.7} />
+                  <XAxis 
+                    dataKey="time" 
+                    angle={-45} 
+                    textAnchor="end" 
+                    height={70} 
+                    tick={{ fontSize: 10 }}
+                    interval={Math.floor(chartData.length / 10)}
+                  />
+                  <YAxis
+                    domain={getYAxisDomain()}
+                    label={{ 
+                      value: `${graphType.charAt(0).toUpperCase() + graphType.slice(1)} (${unit})`, 
+                      angle: -90, 
+                      position: 'insideLeft',
+                      offset: -20
+                    }}
+                    allowDataOverflow={false}
+                    width={60}
+                  />
+                  <Tooltip 
+                    formatter={(value) => [`${value} ${unit}`, graphType.charAt(0).toUpperCase() + graphType.slice(1)]}
+                    labelFormatter={(time) => {
+                      const dataPoint = chartData.find(d => d.time === time);
+                      return dataPoint ? `Time: ${dataPoint.fullTime}` : time;
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey={graphType}
+                    stroke={getLineColor()}
+                    strokeWidth={2}
+                    activeDot={{ r: 6 }}
+                    dot={(props) => <LineDot {...props} graphType={graphType} />}
+                    isAnimationActive={false}
+                  />
+                  <Scatter 
+                    data={chartData.filter(d => {
+                      const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
+                      return d?.is_anomaly && 
+                             d?.anomaly_parameters && 
+                             d.anomaly_parameters.includes(paramName);
+                    })}
+                    fill="#ff6b6b" 
+                    shape={(props) => <CustomDot {...props} graphType={graphType} />}
+                  />
+                  <Legend 
+                    align="center" 
+                    verticalAlign="top" 
+                    height={36}
+                    payload={[
+                      { value: graphType.charAt(0).toUpperCase() + graphType.slice(1), type: 'line', color: getLineColor() },
+                      ...(chartData.some(d => {
+                        const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
+                        return d?.is_anomaly && 
+                               d?.anomaly_parameters && 
+                               d.anomaly_parameters.includes(paramName);
+                      }) ? [{ value: `${graphType.charAt(0).toUpperCase() + graphType.slice(1)} Anomalies`, type: 'circle', color: '#ff6b6b' }] : [])
+                    ]}
+                  />
+                  <Brush dataKey="time" height={20} stroke={getLineColor()} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="no-data-message">
           <p>No data to display. Please check the following:</p>
