@@ -11,4 +11,6 @@ urlpatterns = [
     path('anomalies/', views.AnomalyDetectionView.as_view(), name='anomaly-detection'),
     path('available-nodes/', views.AvailableNodesView.as_view(), name='available-nodes'),
     path('node-date-range/', views.NodeDateRangeView.as_view(), name='node-date-range'),
+    path('time-series/', views.TimeSeriesDataView.as_view(), name='time-series-data'),
+    path('aggregated-data/', views.AggregatedNodeDataView.as_view(), name='aggregated-data'),
 ]

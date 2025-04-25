@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { database } from '../services/firebase';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, get } from 'firebase/database';
 import '../css/Dashboard.css';
 import PowerGraph from './PowerGraph';
 import InterruptionMetrics from './InterruptionMetrics';
@@ -15,7 +15,9 @@ import {
   faBolt, 
   faHourglass, 
   faExclamationCircle,
-  faTimesCircle 
+  faExclamationTriangle,
+  faTimesCircle,
+  faSpinner
 } from '@fortawesome/free-solid-svg-icons';
 
 const Dashboard = () => {
@@ -26,236 +28,36 @@ const Dashboard = () => {
   const [dateRange, setDateRange] = useState('day'); // Default date range
   const [showModal, setShowModal] = useState(false);
   const [modalContent, setModalContent] = useState({ title: '', content: '' });
-  const [availableNodes, setAvailableNodes] = useState([]);
+  const [availableNodes, setAvailableNodes] = useState(['C-1', 'C-18']); // Default nodes for fallback
   const [selectedNode, setSelectedNode] = useState('C-1'); // Default selected node
   const [startDate, setStartDate] = useState('2025-03-10'); // Default start date
-  const [endDate, setEndDate] = useState('2025-03-10'); // Default end date
+  const [endDate, setEndDate] = useState('2025-03-18'); // Default end date
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingNodes, setIsLoadingNodes] = useState(true);
   const [isLoadingDateRange, setIsLoadingDateRange] = useState(false);
-  const [shouldFetchData, setShouldFetchData] = useState(false); // New state to control when to fetch data
-
-  // Fetch available nodes from Backend API
-  useEffect(() => {
-    const fetchAvailableNodes = async () => {
-      try {
-        setIsLoadingNodes(true);
-        const response = await axios.get(`${apiURL}available-nodes/`);
-        const nodes = response.data.nodes || [];
-        
-        setAvailableNodes(nodes);
-        console.log("Available nodes:", nodes);
-        
-        // If current selection is not available, select first available node
-        if (nodes.length > 0 && !nodes.includes(selectedNode)) {
-          setSelectedNode(nodes[0]);
-        }
-      } catch (error) {
-        console.error("Error fetching available nodes from backend:", error);
-        setAvailableNodes([]); // Empty array on error
-      } finally {
-        setIsLoadingNodes(false);
-      }
-    };
-    
-    fetchAvailableNodes();
-  }, []); // Run once on component mount
-
-  // Fetch date range for selected node
-  useEffect(() => {
-    const fetchDateRange = async () => {
-      if (!selectedNode) return;
-      
-      try {
-        setIsLoadingDateRange(true);
-        const response = await axios.get(`${apiURL}node-date-range/?node=${selectedNode}`);
-        
-        if (response.data.min_date && response.data.max_date) {
-          console.log(`Date range for ${selectedNode}: ${response.data.min_date} to ${response.data.max_date}`);
-          setStartDate(response.data.min_date);
-          setEndDate(response.data.max_date);
-        } else {
-          // If the backend returns no dates, set a default date range
-          console.log(`No date range found for ${selectedNode}, using default dates`);
-          const today = new Date();
-          const oneWeekAgo = new Date(today);
-          oneWeekAgo.setDate(today.getDate() - 7);
-          
-          // Format as YYYY-MM-DD
-          const formatDate = (date) => {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-          };
-          
-          setStartDate(formatDate(oneWeekAgo));
-          setEndDate(formatDate(today));
-        }
-        
-        // Signal that we should fetch data now that dates are updated
-        setShouldFetchData(true);
-        
-      } catch (error) {
-        console.error("Error fetching date range for node:", error);
-        // Set fallback date range on error
-        const today = new Date();
-        const oneWeekAgo = new Date(today);
-        oneWeekAgo.setDate(today.getDate() - 7);
-        
-        // Format as YYYY-MM-DD
-        const formatDate = (date) => {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        };
-        
-        setStartDate(formatDate(oneWeekAgo));
-        setEndDate(formatDate(today));
-        
-        // Signal that we should fetch data with these fallback dates
-        setShouldFetchData(true);
-      } finally {
-        setIsLoadingDateRange(false);
-      }
-    };
-    
-    fetchDateRange();
-  }, [selectedNode, apiURL]); // Run when selected node changes
-
-  // Function for backend anomaly detection
-  const processAnomalies = async (rawData) => {
-    try {
-      // Configure your thresholds
-      // Use more realistic thresholds based on your actual data
-      const thresholds = {
-        'voltage': {'min': 200, 'max': 240},       // Widen range
-        'current': {'min': 0, 'max': 50},          // Increase max
-        'power': {'min': 0, 'max': 10000},         // Increase max
-        'frequency': {'min': 59.0, 'max': 61.0},   // Widen range
-        'power_factor': {'min': 0.70, 'max': 1.0}  // Lower min threshold
-      };
-      
-      console.log("Sending data to backend for anomaly detection:", rawData.length, "readings");
-      
-      // Send data to backend for processing
-      const response = await axios.post(
-        `${apiURL}anomalies/`, 
-        { 
-          readings: rawData,
-          thresholds: thresholds
-        }
-      );
-      
-      console.log("Anomaly processing complete. Found:", 
-        response.data.anomaly_count, "anomalies");
-      
-      return response.data.readings;
-    } catch (error) {
-      console.error("Error processing anomalies:", error);
-      return rawData; // Return original data if backend processing fails
-    }
-  };
-
-  // Separate useEffect to fetch Firebase data only when shouldFetchData is true
-  useEffect(() => {
-    if (!shouldFetchData) return;
-    
-    const fetchFirebaseData = async () => {
-      setIsLoading(true);
-      setReadings([]); // Clear previous readings
-      
-      try {
-        console.log(`Fetching data for ${selectedNode} from ${startDate} to ${endDate}`);
-        
-        // Generate array of dates between startDate and endDate
-        const dateRange = getDatesInRange(new Date(startDate), new Date(endDate));
-        let allReadings = [];
-        
-        // Fetch data for each day in the range
-        for (const date of dateRange) {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          
-          const path = `${selectedNode}/${year}/${month}/${day}`;
-          console.log(`Fetching data from path: ${path}`);
-          
-          const nodeRef = ref(database, path);
-          
-          try {
-            // Using a promise to handle asynchronous Firebase calls
-            const snapshot = await new Promise((resolve, reject) => {
-              onValue(nodeRef, resolve, (error) => {
-                console.error(`Error fetching from ${path}:`, error);
-                reject(error);
-              }, { onlyOnce: true });
-            });
-            
-            const data = snapshot.val();
-            
-            if (data) {
-              console.log(`Data found at ${path}:`, data);
-              
-              // Convert Firebase data to readings format
-              Object.keys(data).forEach(time => {
-                const reading = data[time];
-                allReadings.push({
-                  id: `${year}-${month}-${day}-${time}`,
-                  deviceId: selectedNode,
-                  node: selectedNode, // Add node property for consistency with other components
-                  timestamp: `${year}-${month}-${day}T${time}`,
-                  voltage: reading.voltage,
-                  current: reading.current,
-                  power: reading.power,
-                  power_factor: reading.powerFactor,
-                  frequency: reading.frequency,
-                  is_anomaly: reading.is_anomaly || false
-                });
-              });
-              
-              console.log(`Added ${Object.keys(data).length} readings from ${year}-${month}-${day}`);
-            } else {
-              console.log(`No data found at path: ${path}`);
-            }
-          } catch (err) {
-            console.error(`Error fetching data from ${path}:`, err);
-          }
-        }
-        
-        // Sort by timestamp (newest first)
-        allReadings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        
-        // Process the data through backend anomaly detection
-        if (allReadings.length > 0) {
-          console.log("Processing", allReadings.length, "readings for anomalies");
-          const processedData = await processAnomalies(allReadings);
-          setReadings(processedData);
-          
-          // Set the latest reading
-          setLatestReading(processedData[0]);
-        } else {
-          setReadings([]);
-          setLatestReading(null);
-          console.log(`No data found for ${selectedNode} in date range ${startDate} to ${endDate}`);
-        }
-        
-      } catch (err) {
-        console.error("Error processing Firebase data:", err);
-      } finally {
-        setIsLoading(false);
-        // Reset the fetch flag after fetching
-        setShouldFetchData(false);
-      }
-    };
+  const [shouldFetchData, setShouldFetchData] = useState(true); // Start with true to fetch data on load
   
-    fetchFirebaseData();
-    
-  }, [shouldFetchData, selectedNode, startDate, endDate, apiURL]); 
+  // Data handling and efficiency states
+  const [dataResolution, setDataResolution] = useState('auto'); // 'auto', 'minute', 'hour', 'day'
+  const [actualResolution, setActualResolution] = useState('minute'); // The resolution actually used
+  const [dataLoadProgress, setDataLoadProgress] = useState(0); 
+  const [loadedDays, setLoadedDays] = useState([]);
+  const [dataCache, setDataCache] = useState({}); // Cache for fetched data
+  
+  // Background processing states
+  const [isProcessingAnomalies, setIsProcessingAnomalies] = useState(false);
+  const [anomalyProgress, setAnomalyProgress] = useState(0);
+  const anomalyProcessRef = useRef(null);
+  
+  // Use a ref for data cache to prevent dependency issues
+  const dataCacheRef = useRef({});
+  // Track if a fetch is in progress to prevent loops
+  const isFetchInProgressRef = useRef(false);
+  // Track the raw readings for background processing
+  const rawReadingsRef = useRef([]);
 
   // Helper function to get all dates in a range
-  const getDatesInRange = (startDate, endDate) => {
+  const getDatesInRange = useCallback((startDate, endDate) => {
     const dates = [];
     const currentDate = new Date(startDate);
     
@@ -269,7 +71,582 @@ const Dashboard = () => {
     }
     
     return dates;
-  };
+  }, []);
+
+  // Calculate sampling rate based on data range
+  const calculateSamplingRate = useCallback((start, end) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const dayDiff = Math.round((endDate - startDate) / (24 * 60 * 60 * 1000)) + 1;
+    
+    // Estimate readings count (assuming 86400 readings per day - one per second)
+    const estimatedReadings = dayDiff * 86400;
+    
+    // Determine appropriate sampling rate based on total volume
+    if (estimatedReadings > 500000) {
+      return { rate: Math.ceil(estimatedReadings / 5000), mode: 'day' };
+    } else if (estimatedReadings > 100000) {
+      return { rate: Math.ceil(estimatedReadings / 10000), mode: 'hour' };
+    } else if (estimatedReadings > 20000) {
+      return { rate: Math.ceil(estimatedReadings / 15000), mode: 'minute' };
+    } else {
+      return { rate: 1, mode: 'raw' };
+    }
+  }, []);
+
+  // Determine date range warning
+  const getDateRangeWarning = useCallback(() => {
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const dateDiff = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+      
+      if (dateDiff > 30) {
+        return "Long date range detected. Data will be sampled for better performance.";
+      } else if (dateDiff > 7) {
+        return "Wide date range detected. Some data points may be sampled for performance.";
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }, [startDate, endDate]);
+
+  // Sample data to reduce volume while preserving patterns
+  const sampleData = useCallback((data, samplingRate) => {
+    if (!data || data.length === 0 || samplingRate <= 1) return data;
+    
+    console.log(`Sampling data with rate 1:${samplingRate}`);
+    
+    // Keep all anomalies and sample only regular readings
+    const anomalies = data.filter(item => item.is_anomaly);
+    const regularReadings = data.filter(item => !item.is_anomaly);
+    
+    // Apply sampling to regular readings only
+    const sampledRegularReadings = regularReadings.filter((_, index) => index % samplingRate === 0);
+    
+    console.log(`Preserved ${anomalies.length} anomalies, sampled ${sampledRegularReadings.length} regular readings from ${regularReadings.length} total`);
+    
+    // Combine anomalies with sampled regular readings and sort chronologically
+    return [...anomalies, ...sampledRegularReadings].sort((a, b) => 
+      new Date(a.timestamp) - new Date(b.timestamp)
+    );
+  }, []);
+
+  // Get cache key for a day's data - no dependencies needed
+  const getCacheKey = useCallback((node, year, month, day) => {
+    return `${node}_${year}_${month}_${day}`;
+  }, []);
+
+  // Check if data is in cache - using ref instead of state to avoid dependency issues
+  const checkCache = useCallback((node, year, month, day) => {
+    const key = getCacheKey(node, year, month, day);
+    return dataCacheRef.current[key];
+  }, [getCacheKey]);
+
+  // Add data to cache - update both state and ref
+  const addToCache = useCallback((node, year, month, day, data) => {
+    const key = getCacheKey(node, year, month, day);
+    
+    // Update the ref directly (no re-render)
+    dataCacheRef.current[key] = data;
+    
+    // Update the state as well (for component updates)
+    setDataCache(prev => {
+      const newCache = { ...prev };
+      newCache[key] = data;
+      return newCache;
+    });
+  }, [getCacheKey]);
+
+  // Function to format dates for Firebase paths
+  const formatDateForPath = useCallback((date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return { year, month, day, formatted: `${year}-${month}-${day}` };
+  }, []);
+
+  // Sync dataCache state with ref when it changes
+  useEffect(() => {
+    dataCacheRef.current = dataCache;
+  }, [dataCache]);
+
+  // Process data through backend for anomaly detection
+  const processAnomalies = useCallback(async (rawData) => {
+    if (!rawData || rawData.length === 0) return [];
+    
+    try {
+      const thresholds = {
+        'voltage': {'min': 200, 'max': 240},
+        'current': {'min': 0, 'max': 50},
+        'power': {'min': 0, 'max': 10000},
+        'frequency': {'min': 59.0, 'max': 61.0},
+        'power_factor': {'min': 0.70, 'max': 1.0}
+      };
+      
+      console.log("Sending data to backend for anomaly detection:", rawData.length, "readings");
+      
+      // Send data in batches if too large
+      if (rawData.length > 25000) {
+        console.log("Data too large, processing in batches");
+        
+        const batchSize = 20000;
+        const batches = Math.ceil(rawData.length / batchSize);
+        let processedData = [];
+        
+        for (let i = 0; i < batches; i++) {
+          const start = i * batchSize;
+          const end = Math.min(start + batchSize, rawData.length);
+          const batch = rawData.slice(start, end);
+          
+          console.log(`Processing batch ${i+1}/${batches}: ${batch.length} readings`);
+          
+          try {
+            const response = await axios.post(
+              `${apiURL}anomalies/`, 
+              { 
+                readings: batch,
+                thresholds: thresholds
+              }
+            );
+            
+            processedData = [...processedData, ...response.data.readings];
+            console.log(`Batch ${i+1} complete. Found ${response.data.anomaly_count} anomalies`);
+          } catch (error) {
+            console.error(`Error processing batch ${i+1}:`, error);
+            processedData = [...processedData, ...batch]; // Use unprocessed data if failed
+          }
+        }
+        
+        return processedData;
+      } else {
+        // Regular processing for smaller datasets
+        const response = await axios.post(
+          `${apiURL}anomalies/`, 
+          { readings: rawData, thresholds: thresholds }
+        );
+        
+        console.log("Anomaly processing complete. Found:", 
+          response.data.anomaly_count, "anomalies");
+        
+        return response.data.readings;
+      }
+    } catch (error) {
+      console.error("Error processing anomalies:", error);
+      return rawData; // Return original data if processing fails
+    }
+  }, [apiURL]);
+
+  // Fetch available nodes with fallback to direct Firebase if backend fails
+  useEffect(() => {
+    const fetchAvailableNodes = async () => {
+      try {
+        setIsLoadingNodes(true);
+        
+        try {
+          // First try to get from backend API
+          const response = await axios.get(`${apiURL}available-nodes/`);
+          const nodes = response.data.nodes || [];
+          
+          if (nodes.length > 0) {
+            console.log("Available nodes from backend API:", nodes);
+            setAvailableNodes(nodes);
+            
+            if (!nodes.includes(selectedNode)) {
+              setSelectedNode(nodes[0]);
+            }
+            return;
+          }
+        } catch (backendError) {
+          console.error("Error fetching nodes from backend:", backendError);
+          console.warn("Falling back to direct Firebase access");
+        }
+        
+        // Fallback: Try to get nodes directly from Firebase
+        try {
+          // List all root level keys in Firebase
+          const dbRef = ref(database);
+          const snapshot = await get(dbRef);
+          
+          if (snapshot.exists()) {
+            const nodes = Object.keys(snapshot.val())
+              .filter(key => key.startsWith('C-'))
+              .sort(); 
+            
+            console.log("Available nodes from Firebase:", nodes);
+            if (nodes.length > 0) {
+              setAvailableNodes(nodes);
+              
+              if (!nodes.includes(selectedNode)) {
+                setSelectedNode(nodes[0]);
+              }
+            }
+          }
+        } catch (firebaseError) {
+          console.error("Error fetching nodes from Firebase:", firebaseError);
+          console.log("Using default nodes: ['C-1', 'C-18']");
+        }
+        
+      } finally {
+        setIsLoadingNodes(false);
+      }
+    };
+    
+    fetchAvailableNodes();
+  }, []); // Run once on component mount
+
+  // Fetch date range with fallback values for selected node
+  useEffect(() => {
+    const fetchDateRange = async () => {
+      if (!selectedNode) return;
+      
+      try {
+        setIsLoadingDateRange(true);
+        
+        try {
+          const response = await axios.get(`${apiURL}node-date-range/?node=${selectedNode}`);
+          
+          if (response.data.min_date && response.data.max_date) {
+            console.log(`Date range for ${selectedNode}: ${response.data.min_date} to ${response.data.max_date}`);
+            setStartDate(response.data.min_date);
+            setEndDate(response.data.max_date);
+            setShouldFetchData(true);
+            return;
+          }
+        } catch (error) {
+          console.error("Error fetching date range for node:", error);
+        }
+        
+        // Node-specific defaults based on our knowledge
+        if (selectedNode === 'C-1') {
+          setStartDate('2025-03-10');
+          setEndDate('2025-03-18');
+        } else if (selectedNode === 'C-18') {
+          setStartDate('2025-04-17');
+          setEndDate('2025-04-24');
+        } else {
+          // Generic fallback
+          const today = new Date();
+          const oneWeekAgo = new Date(today);
+          oneWeekAgo.setDate(today.getDate() - 7);
+          
+          const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          };
+          
+          setStartDate(formatDate(oneWeekAgo));
+          setEndDate(formatDate(today));
+        }
+        
+        // Signal that we should fetch data with these fallback dates
+        setShouldFetchData(true);
+        
+      } finally {
+        setIsLoadingDateRange(false);
+      }
+    };
+    
+    fetchDateRange();
+  }, [selectedNode, apiURL]); // Run when selected node changes
+
+  // Cleanup function for background processes
+  useEffect(() => {
+    return () => {
+      if (anomalyProcessRef.current) {
+        clearTimeout(anomalyProcessRef.current);
+      }
+    };
+  }, []);
+
+  // Main data fetching function with optimized asynchronous anomaly detection
+  useEffect(() => {
+    // Skip if we shouldn't fetch data or if a fetch is already in progress
+    if (!shouldFetchData || isFetchInProgressRef.current) return;
+    
+    const fetchFirebaseData = async () => {
+      // Cancel any ongoing background processes
+      if (anomalyProcessRef.current) {
+        clearTimeout(anomalyProcessRef.current);
+        anomalyProcessRef.current = null;
+      }
+      
+      isFetchInProgressRef.current = true; // Mark fetch as in progress
+      setIsLoading(true);
+      setReadings([]); // Clear previous readings
+      setDataLoadProgress(0);
+      setAnomalyProgress(0);
+      setIsProcessingAnomalies(false);
+      
+      try {
+        console.log(`Fetching data for ${selectedNode} from ${startDate} to ${endDate}`);
+        
+        // Generate array of dates between startDate and endDate
+        const dateRange = getDatesInRange(new Date(startDate), new Date(endDate));
+        setLoadedDays([]); // Reset loaded days
+        
+        // Determine sampling rate and mode based on resolution setting
+        let rate, mode;
+        
+        if (dataResolution === 'auto') {
+          // Use automatic calculation based on date range
+          const calculated = calculateSamplingRate(startDate, endDate);
+          rate = calculated.rate;
+          mode = calculated.mode;
+        } else {
+          // Use the manually selected resolution
+          mode = dataResolution;
+          
+          // Set appropriate sampling rates based on resolution
+          switch (dataResolution) {
+            case 'minute':
+              rate = 60; // Sample every minute (assuming data is per second)
+              break;
+            case 'hour':
+              rate = 3600; // Sample every hour
+              break;
+            case 'day':
+              rate = 86400; // Sample every day
+              break;
+            default:
+              rate = 1; // No sampling
+          }
+        }
+        
+        console.log(`Using ${dataResolution === 'auto' ? 'auto-calculated' : 'manually selected'} resolution: 1:${rate}, mode: ${mode}`);
+        setActualResolution(mode);
+        
+        // Prepare for efficient loading
+        let allReadings = [];
+        const totalDays = dateRange.length;
+        
+        // Function to fetch data for a single day
+        const fetchDayData = async (date) => {
+          const { year, month, day, formatted } = formatDateForPath(date);
+          const path = `${selectedNode}/${year}/${month}/${day}`;
+          
+          // Check cache first
+          const cachedData = checkCache(selectedNode, year, month, day);
+          if (cachedData) {
+            console.log(`Using cached data for ${path}`);
+            return cachedData;
+          }
+          
+          try {
+            console.log(`Fetching data from path: ${path}`);
+            const nodeRef = ref(database, path);
+            
+            const snapshot = await get(nodeRef);
+            const data = snapshot.val();
+            
+            if (data) {
+              // Convert Firebase data to readings format
+              const dayReadings = Object.keys(data).map(time => ({
+                id: `${formatted}-${time}`,
+                deviceId: selectedNode,
+                node: selectedNode,
+                timestamp: `${formatted}T${time}`,
+                voltage: data[time].voltage,
+                current: data[time].current,
+                power: data[time].power,
+                power_factor: data[time].powerFactor,
+                frequency: data[time].frequency,
+                is_anomaly: data[time].is_anomaly || false
+              }));
+              
+              // Store in cache
+              addToCache(selectedNode, year, month, day, dayReadings);
+              
+              console.log(`Loaded ${dayReadings.length} readings from ${formatted}`);
+              return dayReadings;
+            }
+          } catch (err) {
+            console.error(`Error fetching data from ${path}:`, err);
+          }
+          
+          return []; // Return empty array if no data
+        };
+        
+        // Process days in batches for better UI responsiveness
+        const batchSize = 3; // Fetch 3 days at a time
+        const batches = Math.ceil(totalDays / batchSize);
+        
+        // ------------------- STAGE 1: FETCH DATA -------------------
+        console.log("STAGE 1: Fetching raw data");
+        for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
+          const start = batchIndex * batchSize;
+          const end = Math.min(start + batchSize, totalDays);
+          const batchDates = dateRange.slice(start, end);
+          
+          setDataLoadProgress(Math.min(40, ((batchIndex + 1) * batchSize / totalDays) * 40));
+          
+          // Fetch all days in this batch concurrently
+          const batchResults = await Promise.all(
+            batchDates.map(date => fetchDayData(date))
+          );
+          
+          // Process the batch results
+          const batchReadings = batchResults.flat();
+          allReadings = [...allReadings, ...batchReadings];
+          
+          // Update loaded days for progress tracking
+          const newLoadedDays = batchDates.map(date => formatDateForPath(date).formatted);
+          setLoadedDays(prev => [...prev, ...newLoadedDays]);
+        }
+        
+        // Store raw readings in ref for background processing
+        rawReadingsRef.current = allReadings;
+        
+        // If no data was found, exit early
+        if (allReadings.length === 0) {
+          console.log(`No data found for ${selectedNode} in date range ${startDate} to ${endDate}`);
+          setReadings([]);
+          setLatestReading(null);
+          setDataLoadProgress(100);
+          isFetchInProgressRef.current = false;
+          return;
+        }
+        
+        // ------------------- STAGE 2: APPLY INITIAL SAMPLING -------------------
+        // Apply initial sampling without anomaly detection to display data quickly
+        console.log("STAGE 2: Initial sampling before anomaly detection");
+        setDataLoadProgress(60);
+        
+        // Apply simple sampling based on selected or calculated resolution
+        const initialSampledData = sampleData(allReadings, rate);
+        
+        // Set data for immediate display
+        setReadings(initialSampledData);
+        setIsLoading(false);
+        setDataLoadProgress(100);
+        
+        // Set latest reading based on timestamp
+        if (initialSampledData.length > 0) {
+          const latestByTime = [...initialSampledData].sort(
+            (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+          )[0];
+          setLatestReading(latestByTime);
+        }
+        
+        // Mark main fetch as complete so UI is responsive
+        isFetchInProgressRef.current = false;
+        
+        // ------------------- STAGE 3: START BACKGROUND ANOMALY DETECTION -------------------
+        setIsProcessingAnomalies(true);
+        setAnomalyProgress(0);
+        
+        // Start anomaly detection in the background after a short delay
+        anomalyProcessRef.current = setTimeout(async () => {
+          try {
+            console.log("BACKGROUND TASK: Starting anomaly detection on raw data");
+            
+            // Process anomalies on raw data in background
+            const anomalyChunkSize = 20000;
+            const anomalyBatches = Math.ceil(allReadings.length / anomalyChunkSize);
+            let anomalyFlags = new Map(); // Store anomaly info by reading ID
+            
+            for (let i = 0; i < anomalyBatches; i++) {
+              const start = i * anomalyChunkSize;
+              const end = Math.min(start + anomalyChunkSize, allReadings.length);
+              const chunk = allReadings.slice(start, end);
+              
+              setAnomalyProgress(Math.round(((i + 1) / anomalyBatches) * 100));
+              console.log(`Processing anomalies batch ${i+1}/${anomalyBatches}: ${chunk.length} readings`);
+              
+              try {
+                // Process this chunk for anomalies
+                const processedChunk = await processAnomalies(chunk);
+                
+                // Store which readings are anomalies in our map
+                processedChunk.forEach(reading => {
+                  if (reading.is_anomaly) {
+                    anomalyFlags.set(reading.id, {
+                      is_anomaly: true,
+                      anomaly_parameters: reading.anomaly_parameters || []
+                    });
+                  }
+                });
+                
+                // Update UI with partial results after each batch or every other batch
+                if (i % 2 === 0 || i === anomalyBatches - 1) {
+                  // Get anomalies detected so far
+                  const anomalies = allReadings.filter(reading => 
+                    anomalyFlags.has(reading.id)
+                  );
+                  
+                  // Get regular readings (not anomalies)
+                  const regularReadings = allReadings.filter(reading => 
+                    !anomalyFlags.has(reading.id)
+                  );
+                  
+                  // Apply sampling to regular readings only
+                  const sampledRegularReadings = regularReadings.filter((_, index) => 
+                    index % rate === 0
+                  );
+                  
+                  // Combine and sort chronologically
+                  let updatedReadings = [...anomalies, ...sampledRegularReadings].sort((a, b) => 
+                    new Date(a.timestamp) - new Date(b.timestamp)
+                  );
+                  
+                  // Apply anomaly flags to all readings
+                  updatedReadings = updatedReadings.map(reading => ({
+                    ...reading,
+                    is_anomaly: anomalyFlags.has(reading.id) || reading.is_anomaly || false,
+                    anomaly_parameters: 
+                      anomalyFlags.get(reading.id)?.anomaly_parameters || 
+                      reading.anomaly_parameters || 
+                      []
+                  }));
+                  
+                  // Update the UI with the incrementally improved data
+                  setReadings(updatedReadings);
+                  
+                  // Also update latest reading with anomaly status
+                  if (updatedReadings.length > 0) {
+                    const latestByTime = [...updatedReadings].sort(
+                      (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+                    )[0];
+                    setLatestReading(latestByTime);
+                  }
+                  
+                  console.log(`Partial update: ${anomalies.length} anomalies found so far`);
+                }
+              } catch (error) {
+                console.error(`Error processing anomaly batch ${i+1}:`, error);
+              }
+            }
+            
+            // ------------------- FINAL BACKGROUND UPDATE -------------------
+            console.log(`Background anomaly processing complete: ${
+              allReadings.filter(r => anomalyFlags.has(r.id)).length
+            } anomalies found in ${allReadings.length} readings`);
+            
+          } catch (err) {
+            console.error("Error in background anomaly processing:", err);
+          } finally {
+            setIsProcessingAnomalies(false);
+            setAnomalyProgress(100);
+            anomalyProcessRef.current = null;
+          }
+        }, 500); // Small delay to let the initial render complete
+        
+      } catch (err) {
+        console.error("Error in data processing:", err);
+        setIsLoading(false);
+        setDataLoadProgress(100);
+        isFetchInProgressRef.current = false;
+      }
+    };
+    
+    fetchFirebaseData();
+    
+  }, [shouldFetchData, selectedNode, startDate, endDate, calculateSamplingRate, 
+      formatDateForPath, getDatesInRange, processAnomalies, sampleData, 
+      checkCache, addToCache, apiURL, dataResolution]);
 
   // Handler for graph type change
   const handleGraphTypeChange = (type) => {
@@ -279,19 +656,24 @@ const Dashboard = () => {
   // Handler for date range change
   const handleStartDateChange = (e) => {
     setStartDate(e.target.value);
-    setShouldFetchData(true); // Trigger data fetch when date changes manually
+    setShouldFetchData(true); // Trigger data fetch when date changes
   };
   
   const handleEndDateChange = (e) => {
     setEndDate(e.target.value);
-    setShouldFetchData(true); // Trigger data fetch when date changes manually
+    setShouldFetchData(true); // Trigger data fetch when date changes
   };
 
   // Handler for node selection change
   const handleNodeChange = (e) => {
     setSelectedNode(e.target.value);
     // Date range will be updated by the useEffect that watches selectedNode
-    // The subsequent data fetch will happen after date ranges are updated
+  };
+
+  // Handler for resolution change
+  const handleResolutionChange = (e) => {
+    setDataResolution(e.target.value);
+    setShouldFetchData(true); // Refetch with new resolution
   };
 
   // Handler for PDF download
@@ -300,20 +682,22 @@ const Dashboard = () => {
     // Implement PDF generation and download logic here
   };
 
-  // Handler for opening modal with specific content
+  // Modal handlers
   const openModal = (title, content) => {
     setModalContent({ title, content });
     setShowModal(true);
   };
-
-  // Handler for closing modal
+  
   const closeModal = () => {
     setShowModal(false);
   };
 
+  // Get date range warning
+  const dateRangeWarning = getDateRangeWarning();
+
   return (
     <div className="dashboard-container">
-      {/* Combined Header and Date Selection Row */}
+      {/* Header and Controls */}
       <div className="dashboard-header">
         <div className="header-left">
           <h2 className="dashboard-title">Power Monitoring Dashboard</h2>
@@ -321,14 +705,14 @@ const Dashboard = () => {
         
         <div className="header-right">
           <div className="selector-container">
-            {/* Updated Node Selection Dropdown */}
+            {/* Node Selection */}
             <div className="node-selector">
               <div className="node-label">Node:</div>
               <select 
                 className="node-dropdown"
                 value={selectedNode}
                 onChange={handleNodeChange}
-                disabled={isLoadingNodes}
+                disabled={isLoadingNodes || isLoading}
               >
                 {isLoadingNodes ? (
                   <option value="">Loading nodes...</option>
@@ -342,7 +726,7 @@ const Dashboard = () => {
               </select>
             </div>
             
-            {/* Date Range Selector with loading state */}
+            {/* Date Range Selector */}
             <div className="date-range-selector">
               <div className="date-range-label">
                 Date Range:
@@ -357,7 +741,7 @@ const Dashboard = () => {
                   name="start-date"
                   value={startDate}
                   onChange={handleStartDateChange}
-                  disabled={isLoadingDateRange}
+                  disabled={isLoadingDateRange || isLoading}
                 />
                 <span className="date-separator">-</span>
                 <input 
@@ -366,20 +750,76 @@ const Dashboard = () => {
                   name="end-date"
                   value={endDate}
                   onChange={handleEndDateChange}
-                  disabled={isLoadingDateRange}
+                  disabled={isLoadingDateRange || isLoading}
                 />
               </div>
             </div>
+            
+            {/* Data Resolution Selector */}
+            <div className="resolution-selector">
+              <div className="resolution-label">Resolution:</div>
+              <select 
+                className="resolution-dropdown"
+                value={dataResolution}
+                onChange={handleResolutionChange}
+                disabled={isLoading}
+              >
+                <option value="auto">Auto</option>
+                <option value="minute">Minute</option>
+                <option value="hour">Hour</option>
+                <option value="day">Day</option>
+              </select>
+            </div>
           </div>
           
-          <button className="download-button" onClick={handleDownloadPDF}>
+          <button 
+            className="download-button" 
+            onClick={handleDownloadPDF}
+            disabled={isLoading || readings.length === 0}
+          >
             <FontAwesomeIcon icon={faFileDownload} /> Download as PDF
           </button>
         </div>
       </div>
 
-      {/* Rest of your component remains unchanged */}
+      {/* Warning and Progress Bar */}
+      {dateRangeWarning && (
+        <div className="date-range-warning">
+          <FontAwesomeIcon icon={faExclamationTriangle} /> {dateRangeWarning}
+        </div>
+      )}
+      
+      {dataLoadProgress > 0 && dataLoadProgress < 100 && (
+        <div className="data-loading-controls">
+          <div className="progress-bar-container">
+            <div 
+              className="progress-bar-fill" 
+              style={{ width: `${dataLoadProgress}%` }}
+            ></div>
+          </div>
+          <div className="progress-text">Loading data: {Math.round(dataLoadProgress)}% complete</div>
+        </div>
+      )}
+      
+      {/* Background Processing Indicator */}
+      {isProcessingAnomalies && (
+        <div className="background-process-indicator">
+          <div className="background-process-content">
+            <FontAwesomeIcon icon={faSpinner} spin className="spinner-icon" />
+            <span>Analyzing anomalies in background: {anomalyProgress}% complete</span>
+          </div>
+          <div className="progress-bar-container mini">
+            <div 
+              className="progress-bar-fill" 
+              style={{ width: `${anomalyProgress}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
+
+      {/* Dashboard Content */}
       <div className="dashboard-content">
+        {/* Metric Cards */}
         <div className="metric-cards-row">
           <PowerQualityStatus
             readings={readings}
@@ -406,7 +846,7 @@ const Dashboard = () => {
           
           <InterruptionMetrics 
             readings={readings}
-            voltageThreshold={218}
+            voltageThreshold={180}
             minDurationSec={30}
             onModalOpen={openModal}
           />
@@ -414,9 +854,11 @@ const Dashboard = () => {
           <AnomalyMetrics
             readings={readings}
             onModalOpen={openModal}
+            isProcessing={isProcessingAnomalies}
           />
         </div>
         
+        {/* Graph Section */}
         <div className="graph-row">
           <div className="graph-card">
             <div className="graph-header">
@@ -425,6 +867,12 @@ const Dashboard = () => {
                     ? 'Power Factor Over Time'
                     : graphType.charAt(0).toUpperCase() + graphType.slice(1) + ' Over Time'} 
                 <span className="selected-node">- Node {selectedNode}</span>
+                {actualResolution && (
+                  <span className="data-resolution"> ({actualResolution} resolution)</span>
+                )}
+                {isProcessingAnomalies && (
+                  <span className="analyzing-tag"> (Analyzing anomalies...)</span>
+                )}
               </h3>            
               <div className="graph-controls">
                 <button 
@@ -465,6 +913,9 @@ const Dashboard = () => {
                 <div className="graph-placeholder">
                   <div className="graph-message">
                     <p>Loading data...</p>
+                    {dataLoadProgress > 0 && dataLoadProgress < 100 && (
+                      <p>Progress: {Math.round(dataLoadProgress)}%</p>
+                    )}
                   </div>
                 </div>
               ) : readings.length > 0 ? (
@@ -497,7 +948,14 @@ const Dashboard = () => {
               </button>
             </div>
             <div className="modal-body">
-              <p>{modalContent.content}</p>
+              {/* Replace the simple paragraph with this to preserve formatting */}
+              {modalContent.content.split('\n').map((line, index) => (
+                line.trim() ? 
+                  <p key={index} style={{marginBottom: line.startsWith('-') ? '4px' : '12px'}}>
+                    {line}
+                  </p> 
+                  : <br key={index} />
+              ))}
             </div>
           </div>
         </div>

@@ -43,3 +43,49 @@ class FirebaseService:
         except Exception as e:
             print(f"Error adding power reading: {e}")
             return False
+
+# class AggregatedNodeDataView(APIView):
+#     """API endpoint for retrieving aggregated node data"""
+    
+#     def get(self, request):
+#         """Get aggregated data for a node within a date range"""
+#         node_id = request.query_params.get('node')
+#         start_date = request.query_params.get('start_date')
+#         end_date = request.query_params.get('end_date')
+#         resolution = request.query_params.get('resolution', 'hour')  # 'minute', 'hour', 'day'
+        
+#         if not all([node_id, start_date, end_date]):
+#             return Response(
+#                 {"error": "Missing parameters"}, 
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+            
+#         try:
+#             firebase_service = FirebaseService()
+#             db_ref = firebase_service.db_ref
+            
+#             # Convert date strings to datetime objects
+#             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+#             end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            
+#             # Calculate date difference
+#             date_diff = (end_dt - start_dt).days
+            
+#             # Automatically adjust resolution based on date range
+#             if date_diff > 30:
+#                 resolution = 'day'  # Use daily aggregation for ranges > 30 days
+#             elif date_diff > 7:
+#                 resolution = 'hour'  # Use hourly aggregation for ranges > 7 days
+                
+#             # Fetch and aggregate data
+#             aggregated_data = firebase_service.get_aggregated_readings(
+#                 node_id, start_date, end_date, resolution
+#             )
+            
+#             return Response(aggregated_data)
+            
+#         except Exception as e:
+#             return Response(
+#                 {"error": f"Failed to fetch aggregated data: {str(e)}"},
+#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+#             )
