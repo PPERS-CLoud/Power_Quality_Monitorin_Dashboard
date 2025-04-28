@@ -20,6 +20,85 @@ import {
   faSpinner
 } from '@fortawesome/free-solid-svg-icons';
 
+
+/**
+ * Power Monitoring Dashboard
+ * --------------------------
+ * This dashboard visualizes and analyzes power quality metrics from multiple collection nodes.
+ * 
+ * ADAPTIVE SAMPLING STRATEGY
+ * -------------------------
+ * The system implements multi-level adaptive sampling to handle large datasets efficiently:
+ * 
+ * 1. Initial Data Loading:
+ *    - Very large datasets (>500,000 points): 1:rate sampling to target ~5,000 points (day resolution)
+ *    - Large datasets (>100,000 points): 1:rate sampling to target ~10,000 points (hour resolution)
+ *    - Medium datasets (>20,000 points): 1:rate sampling to target ~15,000 points (minute resolution)
+ *    - Small datasets (≤20,000 points): No sampling (raw resolution)
+ * 
+ * 2. Intelligent Preservation:
+ *    - All anomalous data points are preserved regardless of sampling rate
+ *    - Only regular (non-anomalous) readings are downsampled
+ *    - Results are chronologically sorted after sampling
+ * 
+ * 3. Visualization Sampling (in PowerGraph):
+ *    - Extra-large sets (>10,000 points): Further sampled to ~500 points
+ *    - Large sets (>1,000 points): Further sampled to ~1,000 points
+ * 
+ * ANOMALY DETECTION THRESHOLDS
+ * ---------------------------
+ * Parameters are considered anomalous when outside these ranges:
+ * 
+ * | Parameter     | Minimum Value | Maximum Value |
+ * |---------------|--------------|---------------|
+ * | Voltage       | 218.51 V     | 241.49 V      |
+ * | Current       | 0 A          | 50 A          |
+ * | Power         | 0 W          | 10,000 W      |
+ * | Frequency     | 59.5 Hz      | 60.5 Hz       |
+ * | Power Factor  | 0.8          | 1.0           |
+ * 
+ * POWER QUALITY EVALUATION CRITERIA
+ * -------------------------------
+ * Quality is evaluated using three-tier classification:
+ * 
+ * 1. Excellent Quality (All parameters within ideal ranges):
+ *    - Voltage: 220V - 240V
+ *    - Frequency: 59.8Hz - 60.2Hz
+ *    - Power Factor: ≥ 0.95
+ * 
+ * 2. Good Quality (All parameters within acceptable ranges):
+ *    - Voltage: 218.51V - 241.49V
+ *    - Frequency: 59.5Hz - 60.5Hz
+ *    - Power Factor: ≥ 0.8
+ * 
+ * 3. Poor Quality (One or more parameters outside acceptable ranges)
+ * 
+ * INTERRUPTION DETECTION ALGORITHM
+ * ------------------------------
+ * Power interruptions are detected using the following criteria:
+ * 
+ * - Definition: Any period where voltage drops below 180V
+ * - Minimum duration: 30 seconds (shorter drops are ignored)
+ * - Detection process:
+ *   1. Readings are sorted chronologically
+ *   2. System scans for voltage drops below threshold
+ *   3. Tracks start and end times of each interruption
+ *   4. Calculates duration and flags ongoing interruptions
+ *   5. Reports average interruption duration and total count
+ * 
+ * ANOMALY SEVERITY CALCULATION
+ * --------------------------
+ * Severity is determined by the percentage of anomalous readings:
+ * 
+ * - None: 0% of readings are anomalous
+ * - Low: <5% of readings are anomalous
+ * - Medium: 5-15% of readings are anomalous
+ * - High: >15% of readings are anomalous
+ * 
+ * The system also provides parameter-specific anomaly counts for:
+ * voltage, current, power, frequency, and power factor.
+ */
+
 const Dashboard = () => {
   const [readings, setReadings] = useState([]);
   const [latestReading, setLatestReading] = useState(null);
@@ -178,11 +257,11 @@ const Dashboard = () => {
     // Anomaly Thresholds for different parameters
     try {
       const thresholds = {
-        'voltage': {'min': 200, 'max': 245},
+        'voltage': {'min': 218.51, 'max': 241.49},
         'current': {'min': 0, 'max': 50},
         'power': {'min': 0, 'max': 10000},
-        'frequency': {'min': 59.0, 'max': 61.0},
-        'power_factor': {'min': 0.58, 'max': 1.0}
+        'frequency': {'min': 59.5, 'max': 60.5},
+        'power_factor': {'min': 0.8, 'max': 1.0}
       };
       
       console.log("Sending data to backend for anomaly detection:", rawData.length, "readings");
@@ -810,28 +889,28 @@ const Dashboard = () => {
       <div className="dashboard-content">
         {/* Metric Cards */}
         <div className="metric-cards-row">
-          <PowerQualityStatus
-            readings={readings}
-            latestReading={latestReading}
-            thresholds={{
-              voltage: { 
-                min: 210, 
-                max: 230, 
-                ideal: { min: 218, max: 222 }
-              },
-              frequency: { 
-                min: 59.5, 
-                max: 60.5, 
-                ideal: { min: 59.9, max: 60.1 }
-              },
-              powerFactor: { 
-                min: 0.85, 
-                ideal: 0.95
-              }
-            }}
-            method="combined"
-            onModalOpen={openModal}
-          />
+        <PowerQualityStatus
+          readings={readings}
+          latestReading={latestReading}
+          thresholds={{
+            voltage: { 
+              min: 218.51, 
+              max: 241.49, 
+              ideal: { min: 220, max: 240 }
+            },
+            frequency: { 
+              min: 59.5, 
+              max: 60.5, 
+              ideal: { min: 59.8, max: 60.2 }
+            },
+            powerFactor: { 
+              min: 0.8, 
+              ideal: 0.95
+            }
+          }}
+          method="combined"
+          onModalOpen={openModal}
+        />
           
           <InterruptionMetrics 
             readings={readings}

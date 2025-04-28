@@ -16,9 +16,9 @@ const PowerQualityStatus = ({
   readings = [],
   latestReading = null,
   thresholds = {
-    voltage: { min: 210, max: 230, ideal: { min: 218, max: 222 } },
-    frequency: { min: 59.5, max: 60.5, ideal: { min: 59.9, max: 60.1 } },
-    powerFactor: { min: 0.85, ideal: 0.95 }
+    voltage: { min: 218.51, max: 241.49, ideal: { min: 220, max: 240 } },
+    frequency: { min: 59.5, max: 60.5, ideal: { min: 59.8, max: 60.2 } },
+    powerFactor: { min: 0.8, ideal: 0.95 }
   },
   method = 'anomaly',
   onModalOpen
