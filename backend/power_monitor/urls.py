@@ -10,6 +10,10 @@ from .views import (
     CacheStatsView,
     ClearCacheView,
     CachedNodesView,
+    YearsForNodeView,
+    MonthsForNodeYearView,
+    DaysForNodeYearMonthView,
+    NodeDataView,
 )
 
 # Create a router and register our ViewSets
@@ -31,4 +35,8 @@ urlpatterns = [
     path('cache/stats/', CacheStatsView.as_view(), name='cache-stats'),
     path('cache/clear/', ClearCacheView.as_view(), name='clear-cache'),
     path('cache/nodes/', CachedNodesView.as_view(), name='cached-nodes'),
+    path('firebase/years/', YearsForNodeView.as_view(), name='years-for-node'),
+    path('firebase/months/', MonthsForNodeYearView.as_view(), name='months-for-node-year'),
+    path('firebase/days/', DaysForNodeYearMonthView.as_view(), name='days-for-node-year-month'),
+    path('firebase/node-data/', NodeDataView.as_view(), name='node-data'),
 ]

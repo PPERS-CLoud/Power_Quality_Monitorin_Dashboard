@@ -324,3 +324,179 @@ class FirebaseService:
             import traceback
             traceback.print_exc()
             return None
+
+    def get_years_for_node(self, node):
+        """Get available years for a specific node"""
+        try:
+            node_ref = self.db_ref.child(node)
+            snapshot = node_ref.get(shallow=True)
+            
+            if snapshot:
+                # Filter to include only numeric years
+                years = [
+                    year for year in snapshot.keys() 
+                    if year and year.isdigit()
+                ]
+                # Sort years in descending order (newest first)
+                years.sort(reverse=True)
+                return years
+            return []
+        except Exception as e:
+            print(f"Error fetching years for node {node}: {e}")
+            return []
+
+    def get_months_for_node_year(self, node, year):
+        """Get available months for a specific node and year"""
+        try:
+            year_ref = self.db_ref.child(f"{node}/{year}")
+            snapshot = year_ref.get(shallow=True)
+            
+            if snapshot:
+                # Filter to include only numeric months
+                months = [
+                    month for month in snapshot.keys() 
+                    if month and month.isdigit() and 1 <= int(month) <= 12
+                ]
+                # Sort months in descending order (newest first)
+                months.sort(key=lambda x: int(x), reverse=True)
+                return months
+            return []
+        except Exception as e:
+            print(f"Error fetching months for node {node}, year {year}: {e}")
+            return []
+
+    def get_days_for_node_year_month(self, node, year, month):
+        """Get available days for a specific node, year, and month"""
+        try:
+            month_ref = self.db_ref.child(f"{node}/{year}/{month}")
+            snapshot = month_ref.get(shallow=True)
+            
+            if snapshot:
+                # Filter to include only numeric days
+                days = [
+                    day for day in snapshot.keys() 
+                    if day and day.isdigit() and 1 <= int(day) <= 31
+                ]
+                # Sort days in descending order (newest first)
+                days.sort(key=lambda x: int(x), reverse=True)
+                return days
+            return []
+        except Exception as e:
+            print(f"Error fetching days for node {node}, year {year}, month {month}: {e}")
+            return []
+
+    def get_day_data(self, node, year, month, day, use_cache=True, since_timestamp=None):
+        """Get all data for a specific day, optionally only data newer than since_timestamp"""
+        try:
+            # If we're fetching fresh data based on timestamp, don't use cache
+            if since_timestamp:
+                use_cache = False
+            
+            # Check cache if requested and no timestamp filter
+            if use_cache and not since_timestamp:
+                cache = CacheService()
+                cached_data = cache.get(node, year, month, day)
+                if cached_data:
+                    print(f"Using cached data for {node}/{year}/{month}/{day}")
+                    return cached_data
+            
+            # Fetch from Firebase
+            path = f"{node}/{year}/{month}/{day}"
+            day_ref = self.db_ref.child(path)
+            
+            # If since_timestamp is provided, we'll filter after fetching
+            snapshot = day_ref.get()
+            
+            if snapshot:
+                # Convert Firebase data to readings format
+                readings = []
+                for time, reading in snapshot.items():
+                    try:
+                        if not isinstance(reading, dict):
+                            continue
+                        
+                        # Create ISO timestamp for this reading
+                        timestamp = f"{year}-{month}-{day}T{time}"
+                        
+                        # If since_timestamp is provided, skip readings that are older
+                        if since_timestamp and timestamp <= since_timestamp:
+                            continue
+                        
+                        processed_reading = {
+                            'id': f"{node}-{year}-{month}-{day}-{time}",
+                            'deviceId': node,
+                            'node': node,
+                            'timestamp': timestamp,
+                            'voltage': float(reading.get('voltage', 0)),
+                            'current': float(reading.get('current', 0)),
+                            'power': float(reading.get('power', 0)),
+                            'power_factor': float(reading.get('powerFactor', 0)),
+                            'frequency': float(reading.get('frequency', 0)),
+                            'is_anomaly': bool(reading.get('is_anomaly', False)),
+                            'location': reading.get('location', f"BD-{node[2:]}")
+                        }
+                        
+                        readings.append(processed_reading)
+                    except Exception as e:
+                        print(f"Error processing reading at {path}/{time}: {e}")
+                
+                # Sort readings by timestamp (newest first)
+                readings.sort(key=lambda x: x['timestamp'], reverse=True)
+                
+                # Store in cache if enabled and we're not filtering by timestamp
+                if use_cache and not since_timestamp and readings:
+                    cache = CacheService()
+                    cache.set(node, year, month, day, readings)
+                
+                return readings
+            return []
+        except Exception as e:
+            print(f"Error fetching day data for {node}/{year}/{month}/{day}: {e}")
+            return []
+
+    def get_month_data(self, node, year, month, use_cache=True, since_timestamp=None):
+        """Get all data for a specific month by fetching all days"""
+        try:
+            # Create a month cache key
+            cache_key = f"{node}_{year}_{month}_all"
+            
+            # If fetching only new data by timestamp, don't use cache
+            if since_timestamp:
+                use_cache = False
+                
+            # Check if entire month is cached
+            if use_cache:
+                cache = CacheService()
+                cached_month_data = cache.get(node, year, month, "all")
+                if cached_month_data:
+                    print(f"Using cached data for entire month {node}/{year}/{month}")
+                    return cached_month_data
+                    
+            # Get available days first
+            days = self.get_days_for_node_year_month(node, year, month)
+            
+            if not days:
+                return []
+            
+            # Fetch data for each day
+            all_readings = []
+            for day in days:
+                day_readings = self.get_day_data(
+                    node, year, month, day, 
+                    use_cache=use_cache,
+                    since_timestamp=since_timestamp
+                )
+                all_readings.extend(day_readings)
+            
+            # Sort by timestamp (newest first)
+            all_readings.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            # Cache the entire month's data if we're not just getting new data
+            if use_cache and not since_timestamp and all_readings:
+                cache = CacheService()
+                cache.set(node, year, month, "all", all_readings)
+            
+            return all_readings
+        except Exception as e:
+            print(f"Error fetching month data for {node}/{year}/{month}: {e}")
+            return []

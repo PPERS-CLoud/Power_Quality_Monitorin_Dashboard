@@ -429,3 +429,122 @@ class NodeDateRangeView(APIView):
                 {"error": f"Failed to fetch date range: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class YearsForNodeView(APIView):
+    """View for fetching available years for a specific node"""
+    
+    def get(self, request):
+        try:
+            node = request.query_params.get('node')
+            if not node:
+                return Response(
+                    {"error": "Node parameter is required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            firebase_service = FirebaseService()
+            years = firebase_service.get_years_for_node(node)
+            
+            return Response(years)
+            
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to fetch years: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class MonthsForNodeYearView(APIView):
+    """View for fetching available months for a specific node and year"""
+    
+    def get(self, request):
+        try:
+            node = request.query_params.get('node')
+            year = request.query_params.get('year')
+            
+            if not node or not year:
+                return Response(
+                    {"error": "Node and year parameters are required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            firebase_service = FirebaseService()
+            months = firebase_service.get_months_for_node_year(node, year)
+            
+            return Response(months)
+            
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to fetch months: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class DaysForNodeYearMonthView(APIView):
+    """View for fetching available days for a specific node, year, and month"""
+    
+    def get(self, request):
+        try:
+            node = request.query_params.get('node')
+            year = request.query_params.get('year')
+            month = request.query_params.get('month')
+            
+            if not node or not year or not month:
+                return Response(
+                    {"error": "Node, year, and month parameters are required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            firebase_service = FirebaseService()
+            days = firebase_service.get_days_for_node_year_month(node, year, month)
+            
+            return Response(days)
+            
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to fetch days: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class NodeDataView(APIView):
+    """View for fetching data for a specific node, year, month, and day"""
+    
+    def get(self, request):
+        try:
+            node = request.query_params.get('node')
+            year = request.query_params.get('year')
+            month = request.query_params.get('month')
+            day = request.query_params.get('day')
+            use_cache = request.query_params.get('use_cache', 'true').lower() == 'true'
+            since_timestamp = request.query_params.get('since_timestamp')  # New parameter
+            
+            if not node or not year or not month:
+                return Response(
+                    {"error": "Node, year, and month parameters are required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            firebase_service = FirebaseService()
+            
+            # If day is provided, fetch data for that day
+            # Otherwise, fetch data for the entire month
+            if day:
+                data = firebase_service.get_day_data(
+                    node, year, month, day, 
+                    use_cache=use_cache,
+                    since_timestamp=since_timestamp
+                )
+            else:
+                data = firebase_service.get_month_data(
+                    node, year, month,
+                    use_cache=use_cache,
+                    since_timestamp=since_timestamp
+                )
+            
+            return Response(data)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {"error": f"Failed to fetch data: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
