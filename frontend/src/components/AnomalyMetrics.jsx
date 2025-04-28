@@ -69,24 +69,69 @@ const AnomalyMetrics = ({ readings = [], onModalOpen, isProcessing = false }) =>
       rareParameters.push("power");
     }
     
-    let notes = [];
+    // Create an HTML-formatted string that will be rendered properly in the modal
+    let modalContent = `
+      <div class="anomaly-summary">
+        ${anomalyCount} anomalies detected out of ${totalReadings} total readings (${overallPercentage}%).
+      </div>
+      
+      <h4>Anomalies by parameter type:</h4>
+      <table class="parameter-table">
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>Count</th>
+            <th>Percentage</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Voltage</td>
+            <td>${anomalySummary.voltage}</td>
+            <td>${voltagePercentage}%</td>
+          </tr>
+          <tr>
+            <td>Current</td>
+            <td>${anomalySummary.current}</td>
+            <td>${currentPercentage}%</td>
+          </tr>
+          <tr>
+            <td>Power</td>
+            <td>${anomalySummary.power}</td>
+            <td>${powerPercentage}%</td>
+          </tr>
+          <tr>
+            <td>Frequency</td>
+            <td>${anomalySummary.frequency}</td>
+            <td>${frequencyPercentage}%</td>
+          </tr>
+          <tr>
+            <td>Power Factor</td>
+            <td>${anomalySummary.power_factor}</td>
+            <td>${powerFactorPercentage}%</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
     
-    // Create a single note for all rare parameters
+    // Add note for rare parameters
     if (rareParameters.length > 0) {
       const parameterList = rareParameters.join(", ");
-      notes.push(`Note: ${parameterList.charAt(0).toUpperCase() + parameterList.slice(1)} anomalies represent less than 0.05% of the total data. These rare events may not be visible in main plots due to sampling but are recorded in the analysis.`);
+      modalContent += `
+        <div class="note-box">
+          <strong>Note:</strong> ${parameterList.charAt(0).toUpperCase() + parameterList.slice(1)} anomalies represent less than 0.05% of the total data. These rare events may not be visible in main plots due to sampling but are recorded in the analysis.
+        </div>
+      `;
     }
     
-    return `${anomalyCount} anomalies detected out of ${totalReadings} total readings (${overallPercentage}%).
-  
-  Anomalies by parameter type:
-  - Voltage anomalies: ${anomalySummary.voltage} (${voltagePercentage}% of data)
-  - Current anomalies: ${anomalySummary.current} (${currentPercentage}% of data)
-  - Power anomalies: ${anomalySummary.power} (${powerPercentage}% of data)
-  - Frequency anomalies: ${anomalySummary.frequency} (${frequencyPercentage}% of data)
-  - Power Factor anomalies: ${anomalySummary.power_factor} (${powerFactorPercentage}% of data)
-  ${notes.length > 0 ? '\n' + notes.join('\n') + '\n' : ''}
-  Anomalies indicate measurements outside normal operating parameters and may require investigation.`;
+    // Add conclusion
+    modalContent += `
+      <div class="conclusion">
+        Anomalies indicate measurements outside normal operating parameters and may require investigation.
+      </div>
+    `;
+    
+    return modalContent;
   };
   
   return (

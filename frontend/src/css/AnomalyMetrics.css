@@ -33,3 +33,60 @@
     50% { opacity: 0.7; }
     100% { opacity: 1; }
   }
+
+
+  /* Anomaly Modal Styling */
+.modal-body {
+  color: #333;
+  line-height: 1.5;
+  font-size: 1rem;
+}
+
+.modal-body .anomaly-summary {
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #2f855a;
+}
+
+.modal-body .parameter-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 15px 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.modal-body .parameter-table th,
+.modal-body .parameter-table td {
+  padding: 12px 15px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.modal-body .parameter-table th {
+  background-color: #f0fff4;
+  color: #2f855a;
+  font-weight: 600;
+}
+
+.modal-body .parameter-table tr:nth-child(even) {
+  background-color: #f8fafb;
+}
+
+.modal-body .note-box {
+  margin: 15px 0;
+  padding: 12px 15px;
+  background-color: #fffaf0;
+  border-left: 4px solid #dd6b20;
+  border-radius: 4px;
+  color: #7b341e;
+  font-size: 0.95rem;
+}
+
+.modal-body .conclusion {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #e2e8f0;
+  font-weight: 500;
+}

@@ -1017,14 +1017,16 @@ const Dashboard = () => {
               </button>
             </div>
             <div className="modal-body">
-              {/* Replace the simple paragraph with this to preserve formatting */}
-              {modalContent.content.split('\n').map((line, index) => (
-                line.trim() ? 
-                  <p key={index} style={{marginBottom: line.startsWith('-') ? '4px' : '12px'}}>
-                    {line}
-                  </p> 
-                  : <br key={index} />
-              ))}
+              {modalContent.content.includes('<') ? 
+                <div dangerouslySetInnerHTML={{ __html: modalContent.content }} /> :
+                modalContent.content.split('\n').map((line, index) => (
+                  line.trim() ? 
+                    <p key={index} style={{marginBottom: line.startsWith('-') ? '4px' : '12px'}}>
+                      {line}
+                    </p> 
+                    : <br key={index} />
+                ))
+              }
             </div>
           </div>
         </div>
