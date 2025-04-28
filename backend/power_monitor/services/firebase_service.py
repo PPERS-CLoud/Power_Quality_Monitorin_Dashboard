@@ -2,6 +2,7 @@ import os
 import firebase_admin
 from firebase_admin import credentials, db
 from datetime import datetime, timedelta
+from .cache_service import CacheService
 
 class FirebaseService:
     _instance = None  # Singleton instance
@@ -46,16 +47,13 @@ class FirebaseService:
 
     # Enhanced methods from updated branch
     def get_power_readings(self, node=None, limit=50, start_date=None, end_date=None,
-                      voltage_min=None, voltage_max=None, current_min=None, current_max=None,
-                      power_min=None, power_max=None, power_factor_min=None, power_factor_max=None,
-                      frequency_min=None, frequency_max=None, anomaly_only=None):
+                  voltage_min=None, voltage_max=None, current_min=None, current_max=None,
+                  power_min=None, power_max=None, power_factor_min=None, power_factor_max=None,
+                  frequency_min=None, frequency_max=None, anomaly_only=None, use_cache=True):
         """Fetch power readings from Firebase with extensive filtering."""
         try:
             if node:
                 print(f"Fetching readings for node: {node}, limit: {limit}, date range: {start_date} to {end_date}")
-                print(f"Additional filters - voltage: {voltage_min}-{voltage_max}, current: {current_min}-{current_max}, " +
-                    f"power: {power_min}-{power_max}, pf: {power_factor_min}-{power_factor_max}, " +
-                    f"freq: {frequency_min}-{frequency_max}, anomaly_only: {anomaly_only}")
                 
                 # Try multiple days if date range is not specified
                 all_readings = []
@@ -107,6 +105,9 @@ class FirebaseService:
                             'day': day_to_check.strftime('%d')
                         })
                 
+                # Initialize cache service
+                cache = CacheService() if use_cache else None
+                
                 # Try each date path until we get enough readings or run out of paths
                 readings_found = 0
                 for date_info in date_paths:
@@ -118,87 +119,118 @@ class FirebaseService:
                         path = f"{node}/{date_info['year']}/{date_info['month']}/{date_info['day']}"
                         print(f"Checking Firebase path: {path}")
                         
-                        # Query Firebase with remaining limit
-                        remaining_limit = limit * 2  # Get more than we need for filtering
-                        readings_ref = self.db_ref.child(path).order_by_key().limit_to_first(remaining_limit)
-                        readings_data = readings_ref.get()
+                        # Check cache first if enabled
+                        day_readings = []
+                        if use_cache:
+                            cached_data = cache.get(
+                                node, 
+                                date_info['year'], 
+                                date_info['month'], 
+                                date_info['day']
+                            )
+                            if cached_data:
+                                print(f"Using {len(cached_data)} cached readings for {path}")
+                                day_readings = cached_data
                         
-                        if readings_data:
-                            print(f"Found {len(readings_data)} raw readings at {path}")
+                        # If not in cache, fetch from Firebase
+                        if not day_readings:
+                            # Query Firebase with remaining limit
+                            remaining_limit = limit * 2  # Get more than we need for filtering
+                            readings_ref = self.db_ref.child(path).order_by_key().limit_to_first(remaining_limit)
+                            readings_data = readings_ref.get()
                             
-                            # Process data for this date
-                            for time, reading in readings_data.items():
-                                try:
-                                    # Skip processing if not a dict (common in Firebase)
-                                    if not isinstance(reading, dict):
-                                        continue
+                            if readings_data:
+                                print(f"Found {len(readings_data)} raw readings at {path}")
+                                
+                                # Process data for this date
+                                for time, reading in readings_data.items():
+                                    try:
+                                        # Skip processing if not a dict (common in Firebase)
+                                        if not isinstance(reading, dict):
+                                            continue
+                                            
+                                        # Create a processed reading object
+                                        processed_reading = {
+                                            'id': f"{node}-{date_info['year']}-{date_info['month']}-{date_info['day']}-{time}",
+                                            'deviceId': node,
+                                            'node': node,
+                                            'timestamp': f"{date_info['year']}-{date_info['month']}-{date_info['day']}T{time}",
+                                            'voltage': float(reading.get('voltage', 0)),
+                                            'current': float(reading.get('current', 0)),
+                                            'power': float(reading.get('power', 0)),
+                                            'power_factor': float(reading.get('powerFactor', 0)),
+                                            'frequency': float(reading.get('frequency', 0)),
+                                            'is_anomaly': bool(reading.get('is_anomaly', False)),
+                                            'location': reading.get('location', f"BD-{node[2:]}")
+                                        }
                                         
-                                    # Create a processed reading object
-                                    processed_reading = {
-                                        'id': f"{node}-{date_info['year']}-{date_info['month']}-{date_info['day']}-{time}",
-                                        'deviceId': node,
-                                        'node': node,
-                                        'timestamp': f"{date_info['year']}-{date_info['month']}-{date_info['day']}T{time}",
-                                        'voltage': float(reading.get('voltage', 0)),
-                                        'current': float(reading.get('current', 0)),
-                                        'power': float(reading.get('power', 0)),
-                                        'power_factor': float(reading.get('powerFactor', 0)),
-                                        'frequency': float(reading.get('frequency', 0)),
-                                        'is_anomaly': bool(reading.get('is_anomaly', False)),
-                                        'location': reading.get('location', f"BD-{node[2:]}")
-                                    }
-                                    
-                                    # Apply all the filters here on the backend
-                                    # Voltage filter
-                                    if voltage_min and processed_reading['voltage'] < float(voltage_min):
-                                        continue
-                                    if voltage_max and processed_reading['voltage'] > float(voltage_max):
-                                        continue
-                                    
-                                    # Current filter
-                                    if current_min and processed_reading['current'] < float(current_min):
-                                        continue
-                                    if current_max and processed_reading['current'] > float(current_max):
-                                        continue
-                                    
-                                    # Power filter
-                                    if power_min and processed_reading['power'] < float(power_min):
-                                        continue
-                                    if power_max and processed_reading['power'] > float(power_max):
-                                        continue
-                                    
-                                    # Power factor filter
-                                    if power_factor_min and processed_reading['power_factor'] < float(power_factor_min):
-                                        continue
-                                    if power_factor_max and processed_reading['power_factor'] > float(power_factor_max):
-                                        continue
-                                    
-                                    # Frequency filter
-                                    if frequency_min and processed_reading['frequency'] < float(frequency_min):
-                                        continue
-                                    if frequency_max and processed_reading['frequency'] > float(frequency_max):
-                                        continue
-                                    
-                                    # Anomaly filter
-                                    if anomaly_only and not processed_reading['is_anomaly']:
-                                        continue
-                                    
-                                    # If it passed all filters, add to filtered readings
-                                    processed_readings.append(processed_reading)
-                                    readings_found += 1
-                                    
-                                    # If we've reached our limit after filtering, stop
-                                    if readings_found >= limit:
-                                        break
-                                        
-                                except Exception as e:
-                                    print(f"Error processing reading at {path}/{time}: {e}")
+                                        # Add to day readings (will be cached)
+                                        day_readings.append(processed_reading)
+                                            
+                                    except Exception as e:
+                                        print(f"Error processing reading at {path}/{time}: {e}")
+                                
+                                # Cache the day's data if caching is enabled
+                                if use_cache and day_readings:
+                                    cache.set(
+                                        node, 
+                                        date_info['year'], 
+                                        date_info['month'], 
+                                        date_info['day'], 
+                                        day_readings
+                                    )
+                            else:
+                                print(f"No readings found at path {path}")
+                        
+                        # Now apply filters to the day's readings and add to results
+                        for reading in day_readings:
+                            # Apply all the filters here on the backend
+                            # Voltage filter
+                            if voltage_min and reading['voltage'] < float(voltage_min):
+                                continue
+                            if voltage_max and reading['voltage'] > float(voltage_max):
+                                continue
                             
-                        else:
-                            print(f"No readings found at path {path}")
+                            # Current filter
+                            if current_min and reading['current'] < float(current_min):
+                                continue
+                            if current_max and reading['current'] > float(current_max):
+                                continue
+                            
+                            # Power filter
+                            if power_min and reading['power'] < float(power_min):
+                                continue
+                            if power_max and reading['power'] > float(power_max):
+                                continue
+                            
+                            # Power factor filter
+                            if power_factor_min and reading['power_factor'] < float(power_factor_min):
+                                continue
+                            if power_factor_max and reading['power_factor'] > float(power_factor_max):
+                                continue
+                            
+                            # Frequency filter
+                            if frequency_min and reading['frequency'] < float(frequency_min):
+                                continue
+                            if frequency_max and reading['frequency'] > float(frequency_max):
+                                continue
+                            
+                            # Anomaly filter
+                            if anomaly_only and not reading['is_anomaly']:
+                                continue
+                            
+                            # If it passed all filters, add to filtered readings
+                            processed_readings.append(reading)
+                            readings_found += 1
+                            
+                            # If we've reached our limit after filtering, stop
+                            if readings_found >= limit:
+                                break
                             
                     except Exception as e:
                         print(f"Error checking path {path}: {e}")
+                        
+                    # End of day loop
                 
                 # If we found any filtered readings, return them
                 if processed_readings:

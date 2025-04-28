@@ -6,6 +6,10 @@ from .views import (
     FirebaseNodesView,
     FirebaseCompareView,
     NodeDateRangeView,
+    # Add these new imports
+    CacheStatsView,
+    ClearCacheView,
+    CachedNodesView,
 )
 
 # Create a router and register our ViewSets
@@ -23,5 +27,8 @@ urlpatterns = [
     path('firebase/compare/', FirebaseCompareView.as_view(), name='firebase-compare'),
     path('firebase/date-range/', NodeDateRangeView.as_view(), name='firebase-date-range'),
 
-    # Add additional endpoints as needed
+    # Add new cache endpoints
+    path('cache/stats/', CacheStatsView.as_view(), name='cache-stats'),
+    path('cache/clear/', ClearCacheView.as_view(), name='clear-cache'),
+    path('cache/nodes/', CachedNodesView.as_view(), name='cached-nodes'),
 ]

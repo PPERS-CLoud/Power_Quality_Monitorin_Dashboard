@@ -7,6 +7,61 @@ from rest_framework.viewsets import ViewSet
 from rest_framework.decorators import action
 from .services.firebase_service import FirebaseService
 from .services.anomaly_service import AnomalyDetectionService
+from .services.cache_service import CacheService
+
+# Add these imports at the top if not already present
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .services.cache_service import CacheService
+
+# Add these new view classes at the end of the file:
+
+class CacheStatsView(APIView):
+    """View for retrieving cache statistics"""
+    
+    def get(self, request):
+        """Get cache statistics"""
+        try:
+            cache = CacheService()
+            stats = cache.get_cache_stats()
+            return Response(stats)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to get cache stats: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class ClearCacheView(APIView):
+    """View for clearing cache"""
+    
+    def post(self, request):
+        """Clear cache for a specific node or all cache"""
+        try:
+            node = request.data.get('node', None)
+            cache = CacheService()
+            cache.clear(node)
+            return Response({"success": True, "message": f"Cache cleared for {'node '+node if node else 'all nodes'}"})
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to clear cache: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+class CachedNodesView(APIView):
+    """View for retrieving nodes with cached data"""
+    
+    def get(self, request):
+        """Get list of nodes with cached data"""
+        try:
+            cache = CacheService()
+            cached_nodes = cache.get_cached_nodes()
+            return Response(cached_nodes)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to get cached nodes: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class AnomalyDetectionView(APIView):
     """API endpoint for anomaly detection"""

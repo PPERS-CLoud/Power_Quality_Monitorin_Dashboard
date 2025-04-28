@@ -713,6 +713,432 @@
     margin: 2rem 0 1rem;
 }
 
+/* Horizontal Navigation Bar */
+.navigation-bar {
+    display: flex;
+    align-items: flex-end;
+    margin-bottom: 1.5rem;
+    background-color: #f9fafb;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    border: 1px solid #e2e8f0;
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    margin-right: 1rem;
+    min-width: 120px;
+}
+
+.nav-item.disabled {
+    opacity: 0.6;
+}
+
+.nav-item label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #4a5568;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+
+.nav-select {
+    height: 38px;
+    padding: 0 0.75rem;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+    background-color: white;
+    color: #2d3748;
+    font-size: 0.9rem;
+    appearance: menulist;
+    width: 100%;
+}
+
+.nav-select:focus {
+    border-color: #3182ce;
+    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+    outline: none;
+}
+
+.nav-select:disabled {
+    background-color: #edf2f7;
+    cursor: not-allowed;
+}
+
+.parameter-filter-btn {
+    background-color: #2f855a;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    height: 38px;
+    padding: 0 1rem;
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.parameter-filter-btn:hover:not(:disabled) {
+    background-color: #38a169;
+}
+
+.parameter-filter-btn:disabled {
+    background-color: #a0aec0;
+    cursor: not-allowed;
+}
+
+/* This pushes the parameter filters button to the right */
+.nav-spacer {
+    flex: 1;
+}
+
+/* Add these new styles at the end of your CSS file */
+
+/* Nav filters container */
+.nav-filters {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Reset filters button styling */
+.reset-filters-button {
+    background-color: #e53e3e;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    height: 38px;
+    padding: 0 1rem;
+    cursor: pointer;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.reset-filters-button:hover {
+    background-color: #c53030;
+}
+
+/* Enhance the applied filters styling */
+.applied-filters {
+    background-color: #f0fff4;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid #c6f6d5;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.applied-filters-header {
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.applied-filters-header h4 {
+    color: #2f855a;
+    margin: 0;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.filter-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.filter-tag {
+    background-color: white;
+    border: 1px solid #c6f6d5;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+    color: #276749;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.filter-tag-label {
+    font-weight: 600;
+    margin-right: 5px;
+}
+
+.filter-tag-value {
+    color: #2f855a;
+}
+
+.filter-tag.anomaly-tag {
+    background-color: #fff5f5;
+    border-color: #fed7d7;
+}
+
+.filter-tag.anomaly-tag .filter-tag-label {
+    color: #c53030;
+}
+
+.filter-tag.anomaly-tag .filter-tag-value {
+    color: #e53e3e;
+}
+
+/* Real-time indicator styling */
+.realtime-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: #ebf8ff;
+    border: 1px solid #bee3f8;
+    border-radius: 4px;
+    padding: 8px 16px;
+    margin: 16px 0;
+}
+
+.realtime-indicator {
+    display: flex;
+    align-items: center;
+    color: #2b6cb0;
+    font-weight: 500;
+}
+
+.pulse {
+    width: 10px;
+    height: 10px;
+    background-color: #3182ce;
+    border-radius: 50%;
+    margin-right: 8px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(49, 130, 206, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(49, 130, 206, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(49, 130, 206, 0);
+    }
+}
+
+.last-update {
+    margin-left: 16px;
+    font-size: 0.9em;
+    color: #4a5568;
+}
+
+.realtime-toggle-btn {
+    background-color: #2b6cb0;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.realtime-toggle-btn:hover {
+    background-color: #2c5282;
+}
+
+.new-data-notification {
+    background-color: #4299e1;
+    color: white;
+    border-radius: 4px;
+    padding: 8px 16px;
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: slideIn 0.3s ease-out;
+}
+
+.data-refresh-container {
+    display: flex;
+    justify-content: center;
+    margin: 15px 0;
+  }
+  
+  .data-refresh-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: #3182ce;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .data-refresh-btn:hover {
+    background-color: #2c5282;
+  }
+  
+  .data-refresh-btn:disabled {
+    background-color: #a0aec0;
+    cursor: not-allowed;
+  }
+  
+  .data-refresh-status {
+    display: flex;
+    justify-content: flex-end;
+    color: #718096;
+    font-size: 0.9rem;
+    margin-top: 8px;
+    padding-right: 16px;
+  }
+  
+  .last-update {
+    font-style: italic;
+  }
+  /* Add specific styling for anomalous values */
+    .anomaly-value {
+        color: #e53e3e;
+        font-weight: bold;
+        position: relative;
+    }
+
+    .anomaly-value::after {
+        content: "⚠️";
+        font-size: 0.8em;
+        margin-left: 4px;
+        position: relative;
+        top: -2px;
+    }
+
+    .anomaly-row {
+        background-color: rgba(229, 62, 62, 0.05);
+    }
+
+    /* Tooltip styling */
+    tr[title] {
+        cursor: help;
+    }
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.realtime-enable-container {
+    text-align: center;
+    margin: 16px 0;
+}
+
+.realtime-enable-btn {
+    background-color: #4299e1;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 auto;
+}
+
+.pulse-icon {
+    width: 8px;
+    height: 8px;
+    background-color: white;
+    border-radius: 50%;
+    display: inline-block;
+    animation: pulse 2s infinite;
+}
+
+/* Highlight new rows for a few seconds */
+tr.new-reading {
+    animation: highlightRow 5s ease-out;
+}
+
+.realtime-update-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background-color: rgba(49, 130, 206, 0.1);
+    border-radius: 4px;
+    padding: 6px 12px;
+    margin: 8px 0;
+}
+
+.spinner-mini {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(49, 130, 206, 0.3);
+    border-top-color: #3182ce;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes highlightRow {
+    0%, 20% { background-color: #ebf8ff; }
+    100% { background-color: transparent; }
+}
+
+/* Responsive adjustments for the nav-filters section */
+@media (max-width: 900px) {
+    .nav-filters {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .parameter-filter-btn,
+    .reset-filters-button {
+        flex: 1;
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+    .navigation-bar {
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+    
+    .nav-item {
+        margin-right: 0;
+        min-width: calc(50% - 0.5rem);
+    }
+    
+    .nav-spacer {
+        display: none;
+    }
+}
+
+@media (max-width: 500px) {
+    .nav-item {
+        min-width: 100%;
+    }
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .readings-container {
