@@ -44,18 +44,49 @@ const AnomalyMetrics = ({ readings = [], onModalOpen, isProcessing = false }) =>
       return "No anomalies detected in the selected data range.";
     }
     
-    return `
-      ${anomalyCount} anomalies detected based on threshold criteria.
-      
-      Anomalies by parameter type:
-      - Voltage anomalies: ${anomalySummary.voltage}
-      - Current anomalies: ${anomalySummary.current}
-      - Power anomalies: ${anomalySummary.power}
-      - Frequency anomalies: ${anomalySummary.frequency}
-      - Power Factor anomalies: ${anomalySummary.power_factor}
-      
-      Anomalies indicate measurements outside normal operating parameters and may require investigation.
-    `;
+    const totalReadings = readings.length;
+    const overallPercentage = ((anomalyCount / totalReadings) * 100).toFixed(2);
+    
+    // Calculate percentages for each parameter type
+    const voltagePercentage = ((anomalySummary.voltage / totalReadings) * 100).toFixed(2);
+    const currentPercentage = ((anomalySummary.current / totalReadings) * 100).toFixed(2);
+    const powerPercentage = ((anomalySummary.power / totalReadings) * 100).toFixed(2);
+    const frequencyPercentage = ((anomalySummary.frequency / totalReadings) * 100).toFixed(2);
+    const powerFactorPercentage = ((anomalySummary.power_factor / totalReadings) * 100).toFixed(2);
+    
+    // Collect rare anomaly parameters (< 0.05%)
+    const rareParameters = [];
+    
+    if (anomalySummary.frequency > 0 && anomalySummary.frequency / totalReadings < 0.0005) {
+      rareParameters.push("frequency");
+    }
+    
+    if (anomalySummary.current > 0 && anomalySummary.current / totalReadings < 0.0005) {
+      rareParameters.push("current");
+    }
+    
+    if (anomalySummary.power > 0 && anomalySummary.power / totalReadings < 0.0005) {
+      rareParameters.push("power");
+    }
+    
+    let notes = [];
+    
+    // Create a single note for all rare parameters
+    if (rareParameters.length > 0) {
+      const parameterList = rareParameters.join(", ");
+      notes.push(`Note: ${parameterList.charAt(0).toUpperCase() + parameterList.slice(1)} anomalies represent less than 0.05% of the total data. These rare events may not be visible in main plots due to sampling but are recorded in the analysis.`);
+    }
+    
+    return `${anomalyCount} anomalies detected out of ${totalReadings} total readings (${overallPercentage}%).
+  
+  Anomalies by parameter type:
+  - Voltage anomalies: ${anomalySummary.voltage} (${voltagePercentage}% of data)
+  - Current anomalies: ${anomalySummary.current} (${currentPercentage}% of data)
+  - Power anomalies: ${anomalySummary.power} (${powerPercentage}% of data)
+  - Frequency anomalies: ${anomalySummary.frequency} (${frequencyPercentage}% of data)
+  - Power Factor anomalies: ${anomalySummary.power_factor} (${powerFactorPercentage}% of data)
+  ${notes.length > 0 ? '\n' + notes.join('\n') + '\n' : ''}
+  Anomalies indicate measurements outside normal operating parameters and may require investigation.`;
   };
   
   return (
