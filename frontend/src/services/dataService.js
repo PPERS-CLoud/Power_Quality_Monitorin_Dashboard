@@ -190,3 +190,53 @@ export const fetchNewData = async (nodeId, year, month, day, sinceTimestamp) => 
         return [];
     }
 };
+
+/**
+ * Fetch processed dashboard data from backend
+ * @param {string} nodeId - Node ID
+ * @param {string} startDate - Start date in YYYY-MM-DD format
+ * @param {string} endDate - End date in YYYY-MM-DD format
+ * @param {string} graphType - Current graph type being displayed
+ * @returns {Promise<Object>} Processed dashboard data
+ */
+export const fetchDashboardData = async (nodeId, startDate, endDate, graphType = 'power') => {
+    try {
+        console.log(`Fetching dashboard data for ${nodeId} from ${startDate} to ${endDate}`);
+        
+        const response = await axios.get(`${API_URL}firebase/dashboard-data/`, {
+            params: { 
+                node: nodeId,
+                start_date: startDate,
+                end_date: endDate,
+                graph_type: graphType
+            }
+        });
+        
+        // Check if response exists and has data structure we expect
+        if (response.data) {
+            console.log(`API response received for dashboard data`);
+            
+            // If the response doesn't have readings array, try to create one
+            if (!response.data.readings) {
+                console.log(`Converting response format to expected structure`);
+                // If the response is an array, wrap it in an object
+                if (Array.isArray(response.data)) {
+                    return { readings: response.data };
+                }
+                // If response has data but no readings, return empty readings array
+                return { readings: [] };
+            }
+            
+            console.log(`Successfully loaded dashboard data with ${response.data.readings.length || 0} readings`);
+            return response.data;
+        }
+        
+        // Return an empty readings array instead of throwing an error
+        console.warn('Empty response from dashboard API, returning empty readings array');
+        return { readings: [] };
+    } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        // Return empty readings array on error to allow graceful degradation
+        return { readings: [] };
+    }
+};

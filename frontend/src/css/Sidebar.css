@@ -46,35 +46,56 @@ html, body {
     margin-right: 10px;
   }
 
-  .profile {
-    display: flex;
-    align-items: center;
-    margin-top: auto; /* Push the profile section to the bottom */
-    border-top: 1px solid #f0fdf4;
-    padding-top: 20px;
-    padding-bottom: 10px;
+  .sidebar {
+    /* Keep your existing sidebar styles */
   }
   
-  .profile .fa-icon {
-    height: 25px;
-    margin-right: 10px;
-    border: 2px solid #f0fdf4;
-    padding: 0 5px;
-    padding-top: 5px;
+  .user-container {
+    margin-top: auto;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    margin-bottom: 5px;
+  }
+
+  /* Improved profile section styling */
+  .profile {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+  
+  .profile-avatar {
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
+    background-color: #3d8c65;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 12px;
   }
   
   .profile-info {
-    display: flex;
-    flex-direction: column;
+    flex-grow: 1;
+    min-width: 0;
   }
   
   .profile-name {
-    font-weight: bold;
     margin: 0;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 14px;
   }
   
   .profile-access {
-    font-size: 0.875rem;
     margin: 0;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
   }

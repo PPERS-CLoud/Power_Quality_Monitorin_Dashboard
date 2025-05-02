@@ -11,6 +11,10 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import os
+from datetime import timedelta
+from pymongo import MongoClient
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -108,11 +112,49 @@ WSGI_APPLICATION = 'backend_api.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+# Put this in the same section where your MongoDB settings are
+# MongoDB Connection Settings
+MONGO_URI = "mongodb+srv://ctumcipqm:q6tklNRpnSm5sZUU@cluster0.a08mrpv.mongodb.net/USER_DATA?retryWrites=true&w=majority&appName=Cluster0"
+
+try:
+    # Create MongoDB client with explicit settings
+    MONGO_CLIENT = MongoClient(
+        MONGO_URI, 
+        connectTimeoutMS=30000, 
+        socketTimeoutMS=None, 
+        connect=False,
+        serverSelectionTimeoutMS=5000
+    )
+    
+    # Test the connection
+    MONGO_CLIENT.admin.command('ping')
+    print("MongoDB connection successful!")
+    
+    # Set the database
+    MONGO_DB = MONGO_CLIENT['USER_DATA']
+    
+except Exception as e:
+    print(f"MongoDB connection error: {e}")
+    MONGO_CLIENT = None
+    MONGO_DB = None
+
+# Set custom user model
+AUTH_USER_MODEL = 'power_monitor.User'
+
+# Configure JWT settings
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
 }
 
 

@@ -8,6 +8,21 @@ from rest_framework.decorators import action
 from .services.firebase_service import FirebaseService
 from .services.anomaly_service import AnomalyDetectionService
 from .services.cache_service import CacheService
+from datetime import datetime, timedelta
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import authenticate
+from .serializers import UserRegistrationSerializer, UserLoginSerializer
+from django.contrib.auth.hashers import make_password
+from .mongo_utils import save_user, find_user_by_email, authenticate_user
+import csv
+from django.http import HttpResponse
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from .services.cache_service import CacheService
+from datetime import datetime
+from .models import User
 
 # Add these imports at the top if not already present
 from rest_framework.views import APIView
@@ -548,3 +563,724 @@ class NodeDataView(APIView):
                 {"error": f"Failed to fetch data: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class DashboardDataView(APIView):
+    """View for fetching processed dashboard data"""
+    
+    def get(self, request):
+        """Process and return all dashboard data in one request"""
+        try:
+            # Get required parameters
+            node = request.query_params.get('node')
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            graph_type = request.query_params.get('graph_type', 'power')
+            
+            if not node or not start_date or not end_date:
+                return Response(
+                    {"error": "Node, start_date, and end_date parameters are required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Parse dates
+            try:
+                start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+                end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+                # Include the full end date by setting it to 23:59:59
+                end_date_obj = end_date_obj.replace(hour=23, minute=59, second=59)
+            except ValueError:
+                return Response(
+                    {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Calculate date range
+            date_range = []
+            current_date = start_date_obj
+            while current_date <= end_date_obj:
+                date_range.append(current_date)
+                current_date += timedelta(days=1)
+            
+            # Initialize Firebase service
+            firebase_service = FirebaseService()
+            
+            # Determine appropriate sampling mode based on date range size
+            days_diff = (end_date_obj - start_date_obj).days + 1
+            
+            # Estimate total number of data points (assuming ~1 reading per 30 seconds)
+            estimated_total = days_diff * 86400 // 30  # ~2880 points per day
+            
+            # Calculate target number of points based on range size
+            target_count = 0
+            resolution = ''
+            
+            if days_diff > 30:  # More than a month
+                target_count = 10000
+                resolution = 'day'
+            elif days_diff > 7:  # More than a week
+                target_count = 20000
+                resolution = 'hour'
+            elif days_diff > 2:  # More than 2 days
+                target_count = 30000
+                resolution = 'minute'
+            else:
+                target_count = 50000  # For 1-2 days, keep more detail
+                resolution = 'raw'
+            
+            # Calculate appropriate sampling rate to reach target count
+            sampling_rate = max(1, (estimated_total // target_count) + 1)
+            
+            print(f"Processing {days_diff} days of data. Estimated points: {estimated_total}, " +
+                  f"Target: {target_count}, Sampling rate: {sampling_rate}, Resolution: {resolution}")
+            
+            # Fetch data with progress tracking
+            all_readings = []
+            
+            # Fetch all days in the range
+            for date in date_range:
+                year = str(date.year)
+                month = str(date.month).zfill(2)
+                day = str(date.day).zfill(2)
+                
+                # Use the get_day_data method from FirebaseService
+                day_readings = firebase_service.get_day_data(node, year, month, day, use_cache=True)
+                all_readings.extend(day_readings)
+            
+            print(f"Total readings fetched: {len(all_readings)}")
+            
+            # Apply anomaly detection
+            processed_readings = self.process_anomalies(all_readings)
+            print(f"Anomaly detection completed")
+            
+            # Apply sampling if needed
+            if sampling_rate > 1:
+                processed_readings = self.sample_data(processed_readings, sampling_rate)
+                print(f"Sampling applied at rate 1:{sampling_rate}, readings count: {len(processed_readings)}")
+            
+            # Calculate statistics for all parameters
+            statistics = self.calculate_statistics(processed_readings)
+            
+            # Detect interruptions
+            interruptions = self.detect_interruptions(processed_readings)
+            
+            # Generate anomaly summary
+            anomaly_summary = self.generate_anomaly_summary(processed_readings)
+            
+            # Prepare graph data for all parameters
+            graph_data = self.prepare_graph_data(processed_readings)
+            
+            # Get the latest reading for PowerQualityStatus component
+            latest_reading = None
+            if processed_readings:
+                latest_readings = sorted(processed_readings, 
+                                       key=lambda x: x['timestamp'] if 'timestamp' in x else '',
+                                       reverse=True)
+                latest_reading = latest_readings[0] if latest_readings else None
+            
+            response_data = {
+                "readings": processed_readings,
+                "resolution": resolution,
+                "total_readings": len(all_readings),
+                "displayed_readings": len(processed_readings),
+                "sampling_rate": sampling_rate,
+                "statistics": statistics,
+                "interruptions": interruptions,
+                "anomaly_summary": anomaly_summary,
+                "graph_data": graph_data,
+                "latest_reading": latest_reading
+            }
+            
+            return Response(response_data)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {"error": f"Failed to fetch dashboard data: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def process_anomalies(self, readings):
+        """Apply anomaly detection to readings"""
+        if not readings:
+            return []
+        
+        # Define thresholds
+        thresholds = {
+            'voltage': {'min': 217.4, 'max': 242.6},
+            'current': {'min': 0, 'max': 50},
+            'power': {'min': 0, 'max': 10000},
+            'frequency': {'min': 59.2, 'max': 60.8},
+            'power_factor': {'min': 0.792, 'max': 1.0}
+        }
+        
+        # Process each reading
+        processed_readings = []
+        for reading in readings:
+            # Clone the reading
+            processed = dict(reading)
+            
+            anomaly_parameters = []
+            is_anomaly = False
+            
+            # Check each parameter against thresholds
+            if 'voltage' in processed and (processed['voltage'] < thresholds['voltage']['min'] or 
+                                          processed['voltage'] > thresholds['voltage']['max']):
+                anomaly_parameters.append('voltage')
+                is_anomaly = True
+                
+            if 'current' in processed and (processed['current'] < thresholds['current']['min'] or 
+                                          processed['current'] > thresholds['current']['max']):
+                anomaly_parameters.append('current')
+                is_anomaly = True
+                
+            if 'power' in processed and (processed['power'] < thresholds['power']['min'] or 
+                                        processed['power'] > thresholds['power']['max']):
+                anomaly_parameters.append('power')
+                is_anomaly = True
+                
+            if 'frequency' in processed and (processed['frequency'] < thresholds['frequency']['min'] or 
+                                            processed['frequency'] > thresholds['frequency']['max']):
+                anomaly_parameters.append('frequency')
+                is_anomaly = True
+                
+            if 'power_factor' in processed and (processed['power_factor'] < thresholds['power_factor']['min'] or 
+                                               processed['power_factor'] > thresholds['power_factor']['max']):
+                anomaly_parameters.append('power_factor')
+                is_anomaly = True
+            
+            # Update reading with anomaly information
+            processed['is_anomaly'] = is_anomaly
+            processed['anomaly_parameters'] = anomaly_parameters
+            
+            processed_readings.append(processed)
+            
+        return processed_readings
+    
+    def sample_data(self, data, sampling_rate):
+        """Sample data while preserving anomalies"""
+        if not data or sampling_rate <= 1:
+            return data
+        
+        # Keep all anomalies
+        anomalies = [r for r in data if r.get('is_anomaly', False)]
+        # Get regular readings
+        regular_readings = [r for r in data if not r.get('is_anomaly', False)]
+        
+        print(f"Sampling {len(regular_readings)} regular readings at rate 1:{sampling_rate}")
+        print(f"Preserving {len(anomalies)} anomalies")
+        
+        # Sample regular readings
+        sampled_regular = [regular_readings[i] for i in range(0, len(regular_readings), sampling_rate)]
+        
+        # Combine and sort by timestamp
+        combined = anomalies + sampled_regular
+        combined.sort(key=lambda x: x['timestamp'])
+        
+        return combined
+    
+    def calculate_statistics(self, readings):
+        """Calculate statistics for each parameter"""
+        if not readings:
+            return {}
+        
+        # Parameters to analyze
+        parameters = ['voltage', 'current', 'power', 'frequency', 'power_factor']
+        
+        # Initialize statistics
+        stats = {}
+        
+        for param in parameters:
+            # Get values for this parameter
+            values = [reading[param] for reading in readings if param in reading]
+            
+            if values:
+                param_stats = {
+                    'min': min(values),
+                    'max': max(values),
+                    'avg': sum(values) / len(values),
+                    'count': len(values)
+                }
+                
+                # Round values for readability
+                for key in ['min', 'max', 'avg']:
+                    param_stats[key] = round(param_stats[key], 2)
+                
+                # Add to overall stats
+                stats[param] = param_stats
+        
+        return stats
+    
+    def detect_interruptions(self, readings, voltage_threshold=180, min_duration_sec=30):
+        """Detect power interruptions in readings"""
+        if not readings:
+            return {'count': 0, 'avg_duration_min': 0, 'details': []}
+        
+        # Sort readings by timestamp
+        sorted_readings = sorted(readings, key=lambda x: x['timestamp'])
+        
+        interruptions = []
+        in_interruption = False
+        interruption_start = None
+        min_voltage = None
+        
+        # Process each reading to find interruptions
+        for i, reading in enumerate(sorted_readings):
+            # Check if voltage below threshold
+            if reading['voltage'] < voltage_threshold:
+                # Start of interruption
+                if not in_interruption:
+                    in_interruption = True
+                    interruption_start = reading['timestamp']
+                    min_voltage = reading['voltage']
+                else:
+                    # Update minimum voltage during interruption
+                    min_voltage = min(min_voltage, reading['voltage'])
+            else:
+                # End of interruption
+                if in_interruption:
+                    in_interruption = False
+                    interruption_end = reading['timestamp']
+                    
+                    # Calculate duration
+                    start_time = datetime.fromisoformat(interruption_start.replace('Z', '+00:00'))
+                    end_time = datetime.fromisoformat(interruption_end.replace('Z', '+00:00'))
+                    duration_sec = (end_time - start_time).total_seconds()
+                    
+                    # Only record if duration exceeds minimum threshold
+                    if duration_sec >= min_duration_sec:
+                        # Determine severity
+                        severity = 'critical' if min_voltage < 100 else 'major' if min_voltage < 150 else 'minor'
+                        
+                        interruptions.append({
+                            'start': interruption_start,
+                            'end': interruption_end,
+                            'duration_sec': duration_sec,
+                            'duration_readable': self.format_duration(duration_sec),
+                            'min_voltage': round(min_voltage, 1),
+                            'severity': severity,
+                            'ongoing': False
+                        })
+        
+        # Handle case where we're still in an interruption at the end of the data
+        if in_interruption and interruption_start:
+            # Use last reading as end point
+            interruption_end = sorted_readings[-1]['timestamp']
+            
+            # Calculate duration
+            start_time = datetime.fromisoformat(interruption_start.replace('Z', '+00:00'))
+            end_time = datetime.fromisoformat(interruption_end.replace('Z', '+00:00'))
+            duration_sec = (end_time - start_time).total_seconds()
+            
+            if duration_sec >= min_duration_sec:
+                # Determine severity
+                severity = 'critical' if min_voltage < 100 else 'major' if min_voltage < 150 else 'minor'
+                
+                interruptions.append({
+                    'start': interruption_start,
+                    'end': interruption_end,
+                    'duration_sec': duration_sec,
+                    'duration_readable': self.format_duration(duration_sec),
+                    'min_voltage': round(min_voltage, 1),
+                    'severity': severity,
+                    'ongoing': True
+                })
+        
+        # Calculate summary metrics
+        count = len(interruptions)
+        total_duration_sec = sum(i['duration_sec'] for i in interruptions)
+        avg_duration_min = round(total_duration_sec / count / 60, 1) if count > 0 else 0
+        
+        return {
+            'count': count,
+            'total_duration_sec': total_duration_sec,
+            'avg_duration_min': avg_duration_min,
+            'details': interruptions
+        }
+    
+    def generate_anomaly_summary(self, readings):
+        """Generate summary of anomalies"""
+        if not readings:
+            return {
+                'count': 0,
+                'percentage': 0,
+                'severity_level': 'none',
+                'parameter_counts': {
+                    'voltage': 0,
+                    'current': 0,
+                    'power': 0,
+                    'frequency': 0,
+                    'power_factor': 0
+                },
+                'total_readings': 0
+            }
+        
+        # Count anomalies
+        anomalies = [r for r in readings if r.get('is_anomaly', False)]
+        anomaly_count = len(anomalies)
+        
+        # Create summary of anomaly parameters
+        parameter_counts = {
+            'voltage': 0,
+            'current': 0,
+            'power': 0,
+            'frequency': 0,
+            'power_factor': 0
+        }
+        
+        # Count parameter-specific anomalies
+        for anomaly in anomalies:
+            params = anomaly.get('anomaly_parameters', [])
+            for param in params:
+                if param in parameter_counts:
+                    parameter_counts[param] += 1
+        
+        # Calculate percentage of anomalies
+        total_readings = len(readings)
+        percentage = (anomaly_count / total_readings * 100) if total_readings > 0 else 0
+        
+        # Determine severity level
+        if percentage == 0:
+            severity = 'none'
+        elif percentage < 5:
+            severity = 'low'
+        elif percentage < 15:
+            severity = 'medium'
+        else:
+            severity = 'high'
+        
+        return {
+            'count': anomaly_count,
+            'percentage': round(percentage, 2),
+            'parameter_counts': parameter_counts,
+            'severity_level': severity,
+            'total_readings': total_readings
+        }
+    
+    def prepare_graph_data(self, readings):
+        """Prepare data for different graph types"""
+        if not readings:
+            return {}
+            
+        # Sort readings by timestamp
+        sorted_readings = sorted(readings, key=lambda x: x['timestamp'])
+        
+        # Prepare data for each graph type
+        graph_data = {}
+        
+        parameters = ['voltage', 'current', 'power', 'frequency', 'power_factor']
+        
+        for param in parameters:
+            # Format the parameter name correctly for frontend
+            frontend_param = 'powerFactor' if param == 'power_factor' else param
+            
+            # Format data for this parameter
+            param_data = []
+            
+            for reading in sorted_readings:
+                # Convert timestamp to readable format for display
+                timestamp = datetime.fromisoformat(reading['timestamp'].replace('Z', '+00:00'))
+                display_time = timestamp.strftime('%b %d %H:%M')
+                full_time = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Extract parameter value
+                param_value = reading[param]
+                
+                # Check if this is an anomaly for this parameter
+                is_anomaly = reading.get('is_anomaly', False)
+                anomaly_parameters = reading.get('anomaly_parameters', [])
+                is_param_anomalous = is_anomaly and param in anomaly_parameters
+                
+                param_data.append({
+                    'time': display_time,
+                    'fullTime': full_time,
+                    'timestamp': reading['timestamp'],
+                    'value': param_value,
+                    'is_anomaly': is_anomaly,
+                    'anomaly_parameters': anomaly_parameters,
+                    'is_param_anomalous': is_param_anomalous,
+                    # Add the parameter value with the correct frontend name
+                    frontend_param: param_value  
+                })
+            
+            graph_data[frontend_param] = param_data
+        
+        return graph_data
+    
+    def format_duration(self, seconds):
+        """Format duration in seconds to a human-readable string"""
+        if seconds < 60:
+            return f"{int(seconds)} seconds"
+        
+        minutes = seconds // 60
+        remaining_seconds = seconds % 60
+        
+        if minutes < 60:
+            return f"{int(minutes)} min {int(remaining_seconds)} sec"
+        
+        hours = minutes // 60
+        remaining_minutes = minutes % 60
+        
+        if hours < 24:
+            return f"{int(hours)} hr {int(remaining_minutes)} min"
+        
+        days = hours // 24
+        remaining_hours = hours % 24
+        
+        return f"{int(days)} days {int(remaining_hours)} hr"
+
+# Example for user registration view
+# Add these classes to your existing views.py file
+# Make sure you keep all your existing code and add these classes at the end
+
+class UserRegistrationView(APIView):
+    """API endpoint for user registration"""
+    
+    def post(self, request):
+        try:
+            data = request.data
+            
+            # Check if user already exists
+            existing_user = find_user_by_email(data['email'])
+            if existing_user:
+                return Response({
+                    'message': 'User with this email already exists'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Hash the password
+            hashed_password = make_password(data['password'])
+            
+            # Store user in MongoDB
+            user_data = {
+                'email': data['email'],
+                'name': data['name'],
+                'password': hashed_password,
+                'created_at': datetime.now().isoformat()
+            }
+            
+            user_id = save_user(user_data)
+            
+            # Return success response
+            return Response({
+                'message': 'Registration successful',
+                'user': {
+                    'id': str(user_id),
+                    'name': data['name'],
+                    'email': data['email']
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class UserLoginView(APIView):
+    """API endpoint for user login"""
+    
+    def post(self, request):
+        try:
+            data = request.data
+            
+            # Authenticate user
+            user = authenticate_user(data['email'], data['password'])
+            
+            if not user:
+                return Response({
+                    'message': 'Invalid credentials'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            # Generate JWT token
+            refresh = RefreshToken.for_user(User(email=user['email']))
+            
+            # Return user data and token
+            return Response({
+                'token': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': {
+                    'id': str(user['_id']),
+                    'name': user['name'],
+                    'email': user['email']
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+@api_view(['GET'])
+def export_csv(request):
+    """Export power readings as CSV"""
+    try:
+        # Get parameters from request
+        node = request.query_params.get('node')
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        day = request.query_params.get('day')
+        
+        print(f"CSV Export requested for node: {node}, year: {year}, month: {month}, day: {day}")
+        
+        # Other parameter filters...
+        
+        if not node:
+            return Response({"error": "Node parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get cache service
+        cache_service = CacheService()
+        firebase_service = FirebaseService()
+        
+        # Retrieve data from cache
+        data = []
+        
+        try:
+            if year and month and day:
+                # Fetch specific day
+                cached_data = cache_service.get(node, year, month, day)
+                if cached_data:
+                    data = cached_data
+                    print(f"Found {len(data)} records for {node} on {year}-{month}-{day}")
+                else:
+                    print(f"No data found for {node} on {year}-{month}-{day}")
+            elif year and month:
+                # Fetch specific month
+                data = firebase_service.get_month_data(node, year, month, use_cache=True)
+                print(f"Retrieved {len(data)} records for {node} in {year}-{month}")
+            elif year:
+                # Fetch all data for a specific year
+                for m in range(1, 13):
+                    month_str = f"{m:02d}"
+                    month_data = firebase_service.get_month_data(node, year, month_str, use_cache=True)
+                    data.extend(month_data)
+                print(f"Retrieved {len(data)} records for {node} in {year}")
+            else:
+                # Fetch ALL data for this node
+                # First, get available years for this node
+                years = firebase_service.get_years_for_node(node)
+                print(f"Found years for {node}: {years}")
+                
+                for year in years:
+                    # For each year, get available months
+                    months = firebase_service.get_months_for_node_year(node, year)
+                    print(f"Found months for {node} in {year}: {months}")
+                    
+                    for month in months:
+                        # For each month, get data
+                        month_data = firebase_service.get_month_data(node, year, month, use_cache=True)
+                        data.extend(month_data)
+                        print(f"Retrieved {len(month_data)} records for {node} in {year}-{month}")
+                
+                print(f"Retrieved {len(data)} total records for node {node}")
+                
+                # If still no data, use demo data as fallback
+                if len(data) == 0:
+                    print("No data found for node, using demo data as fallback")
+                    data = [
+                        {
+                            "timestamp": int(datetime.now().timestamp() * 1000),
+                            "voltage": 230.5,
+                            "current": 2.5,
+                            "power": 575.0,
+                            "frequency": 60.0,
+                            "power_factor": 0.95,
+                            "node": node,
+                            "is_anomaly": False
+                        }
+                    ]
+        except Exception as cache_error:
+            print(f"Error retrieving data from cache: {cache_error}")
+            import traceback
+            traceback.print_exc()
+            return Response({"error": f"Cache error: {str(cache_error)}"}, 
+                           status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        print(f"Retrieved {len(data)} records from cache")
+        
+        # Rest of your function remains the same...
+        
+        # Apply filters if provided
+        filtered_data = data
+        
+        # Create CSV response with proper headers
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{node}_power_data.csv"'
+        
+        # Create CSV writer
+        writer = csv.writer(response)
+        
+        # Write header
+        headers = ['Node', 'Timestamp', 'Voltage (V)', 'Current (A)', 'Power (W)', 
+                  'Frequency (Hz)', 'Power Factor', 'Is Anomaly']
+        writer.writerow(headers)
+        
+        # Write data rows
+        for row in filtered_data:
+            try:
+                # Handle different timestamp formats
+                ts = row.get('timestamp', 0)
+                
+                if isinstance(ts, str):
+                    # If timestamp is already a string (ISO format)
+                    if 'T' in ts:
+                        # Parse ISO format: 2025-04-18T12:34:56.789Z
+                        dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                        timestamp = dt.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        # If it's already in the desired format, use it directly
+                        timestamp = ts
+                elif isinstance(ts, int) or isinstance(ts, float):
+                    # Convert numeric timestamp (milliseconds since epoch)
+                    dt = datetime.fromtimestamp(ts / 1000)  # Convert ms to seconds
+                    timestamp = dt.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    # Fallback for unexpected format
+                    timestamp = str(ts)
+                
+                # Get values with safe defaults
+                node_value = row.get('node', node)
+                voltage = row.get('voltage', '')
+                current = row.get('current', '')
+                power = row.get('power', '')
+                frequency = row.get('frequency', '')
+                power_factor = row.get('power_factor', '')
+                is_anomaly = 'Yes' if row.get('is_anomaly', False) else 'No'
+                
+                # Write the row
+                writer.writerow([
+                    node_value,
+                    timestamp,
+                    voltage,
+                    current,
+                    power,
+                    frequency,
+                    power_factor,
+                    is_anomaly
+                ])
+            except Exception as row_error:
+                print(f"Error processing row: {row_error}, row data: {row}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        print(f"CSV export completed successfully with {len(filtered_data)} rows")
+        return response
+        
+    except Exception as e:
+        print(f"Error exporting CSV: {e}")
+        import traceback
+        traceback.print_exc()
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_profile(request):
+    """Return the current user's profile data"""
+    user = request.user
+    return Response({
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'role': 'Admin' if user.is_staff else 'User',
+        # Add any other user fields you want to expose
+    })

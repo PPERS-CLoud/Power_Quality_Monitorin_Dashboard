@@ -85,34 +85,62 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
         // Sort by timestamp (oldest first for the chart)
         const sortedData = [...readings].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         
-        // Adaptive resolution: If we have too many points, sample based on data size
-        const totalPoints = sortedData.length;
-        let dataToRender = sortedData;
-        
-        // For extremely large datasets, use more aggressive sampling
-        if (totalPoints > 10000) {
-          const samplingRate = Math.ceil(totalPoints / 500);
-          console.log(`Very large dataset detected (${totalPoints} points). Using sampling rate: 1:${samplingRate}`);
-          dataToRender = sortedData.filter((_, index) => index % samplingRate === 0);
-        } else if (totalPoints > 1000) {
-          const samplingRate = Math.ceil(totalPoints / 1000);
-          console.log(`Large dataset detected (${totalPoints} points). Using sampling rate: 1:${samplingRate}`);
-          dataToRender = sortedData.filter((_, index) => index % samplingRate === 0);
-        }
-        
-        // Convert graphType to backend parameter name format for anomaly check
+        // Get parameter name for anomaly checking
         const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
         
+        // Count original anomaly proportion for this specific parameter
+        const originalAnomalies = sortedData.filter(d => 
+          d?.is_anomaly && d?.anomaly_parameters && d.anomaly_parameters.includes(paramName)
+        );
+        const regularData = sortedData.filter(d => 
+          !(d?.is_anomaly && d?.anomaly_parameters && d.anomaly_parameters.includes(paramName))
+        );
+        
+        const totalPoints = sortedData.length;
+        const originalAnomalyCount = originalAnomalies.length;
+        const originalProportion = originalAnomalyCount / totalPoints;
+        
+        console.log(`Original data: ${originalAnomalyCount}/${totalPoints} anomalies (${(originalProportion * 100).toFixed(2)}%)`);
+        
+        let dataToRender = sortedData;
+        
+        // For large datasets, use reservoir sampling with stratification
+        if (totalPoints > 500) {
+          const targetPoints = totalPoints > 10000 ? 500 : 1000;
+          console.log(`Large dataset detected (${totalPoints} points). Targeting ~${targetPoints} points with stratified sampling.`);
+          
+          // IMPORTANT: Preserve the exact same proportion in sampled data
+          const targetAnomalyCount = Math.round(targetPoints * originalProportion);
+          const targetRegularCount = targetPoints - targetAnomalyCount;
+          
+          console.log(`Target distribution: ${targetAnomalyCount} anomalies (${(originalProportion * 100).toFixed(2)}%) and ${targetRegularCount} regular points`);
+          
+          // Use reservoir sampling for both anomalous and regular points
+          const sampledAnomalies = reservoirSample(originalAnomalies, targetAnomalyCount);
+          const sampledRegular = reservoirSample(regularData, targetRegularCount);
+          
+          // Combine and sort chronologically
+          dataToRender = [...sampledAnomalies, ...sampledRegular]
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+          
+          // Log final proportions
+          const finalAnomalies = dataToRender.filter(d => 
+            d?.is_anomaly && d?.anomaly_parameters && d.anomaly_parameters.includes(paramName)
+          ).length;
+          const finalProportion = finalAnomalies / dataToRender.length;
+          
+          console.log(`Final sampled data: ${finalAnomalies}/${dataToRender.length} anomalies (${(finalProportion * 100).toFixed(2)}%)`);
+        }
+        
         return dataToRender.map(reading => ({
-          // Include date information in the time display
+          // Map fields for chart display - existing mapping code
           time: new Date(reading.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + 
                 new Date(reading.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          fullTime: new Date(reading.timestamp).toLocaleString(), // Full date and time
+          fullTime: new Date(reading.timestamp).toLocaleString(),
           fullTimestamp: reading.timestamp,
           [graphType]: graphType === 'powerFactor' ? reading.power_factor : reading[graphType],
           is_anomaly: reading.is_anomaly,
           anomaly_parameters: reading.anomaly_parameters || [],
-          // Add a specific flag for this parameter's anomaly state
           isParamAnomalous: reading.is_anomaly && 
                            reading.anomaly_parameters && 
                            reading.anomaly_parameters.includes(paramName)
@@ -121,6 +149,28 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
         console.error("Error formatting data:", err);
         return [];
       }
+    };
+    
+    // Helper function: Reservoir sampling algorithm - provides uniform random sampling without bias
+    const reservoirSample = (array, sampleSize) => {
+      if (array.length <= sampleSize) {
+        return [...array]; // Return all elements if we need more than exist
+      }
+      
+      // Initialize reservoir with first sampleSize elements
+      const result = array.slice(0, sampleSize);
+      
+      // Replace elements with gradually decreasing probability
+      for (let i = sampleSize; i < array.length; i++) {
+        // Random index in reservoir
+        const j = Math.floor(Math.random() * (i + 1));
+        // Replace element if random index is within reservoir
+        if (j < sampleSize) {
+          result[j] = array[i];
+        }
+      }
+      
+      return result;
     };
     
     // Calculate statistics for the dataset
@@ -198,43 +248,26 @@ const PowerGraph = ({ readings, graphType, selectedNode }) => {
         <div className="two-column-layout">
           {/* First Column - Stats and Anomalies */}
           <div className="stats-column">
-            <h3 className="stats-title">Statistics</h3>
-            <div className="graph-stats">
-              <div className="stat-item">
-                <h4>Min</h4>
-                <p>{stats.min} {unit}</p>
-              </div>
-              <div className="stat-item">
-                <h4>Average</h4>
-                <p>{stats.avg} {unit}</p>
-              </div>
-              <div className="stat-item">
-                <h4>Max</h4>
-                <p>{stats.max} {unit}</p>
-              </div>
-              <div className="stat-item">
-                <h4>Data Points</h4>
-                <p>{chartData.length}</p>
-              </div>
-              {/* Only count anomalies specific to this parameter */}
-              {chartData.filter(d => {
-                const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
-                return d?.is_anomaly && 
-                       d?.anomaly_parameters && 
-                       d.anomaly_parameters.includes(paramName);
-              }).length > 0 && (
-                <div className="stat-item anomaly-stat">
-                  <h4>Anomalies</h4>
-                  <p>{chartData.filter(d => {
-                    const paramName = graphType === 'powerFactor' ? 'power_factor' : graphType;
-                    return d?.is_anomaly && 
-                           d?.anomaly_parameters && 
-                           d.anomaly_parameters.includes(paramName);
-                  }).length}</p>
-                </div>
-              )}
+          <h3 className="stats-title">Statistics</h3>
+          <div className="graph-stats">
+            <div className="stat-item">
+              <h4>Min</h4>
+              <p>{stats.min} {unit}</p>
+            </div>
+            <div className="stat-item">
+              <h4>Average</h4>
+              <p>{stats.avg} {unit}</p>
+            </div>
+            <div className="stat-item">
+              <h4>Max</h4>
+              <p>{stats.max} {unit}</p>
+            </div>
+            <div className="stat-item">
+              <h4>Data Points</h4>
+              <p>{chartData.length}</p>
             </div>
           </div>
+        </div>
           
           {/* Second Column - Graph */}
           <div className="graph-column">

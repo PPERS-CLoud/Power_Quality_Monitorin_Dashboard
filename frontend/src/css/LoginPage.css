@@ -80,3 +80,28 @@
     text-decoration: underline;
     color: white;
   }
+
+  /* Add these styles to your existing LoginPage.css */
+
+.error-message {
+  background-color: #ffdddd;
+  color: #cc0000;
+  padding: 10px;
+  border-radius: 10px;
+  margin-bottom: 15px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.icon {
+  margin-right: 8px;
+}
+
+.sign-in-button:disabled {
+  background-color: #7fceaa;
+  cursor: not-allowed;
+}
+
+.sign-in-button .icon {
+  margin-right: 8px;
+}

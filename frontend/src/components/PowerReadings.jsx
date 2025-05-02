@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faDownload, faSpinner, faSync } from '@fortawesome/free-solid-svg-icons';
 import '../css/PowerReadings.css';
@@ -23,6 +23,8 @@ import ParameterFiltersModal from './ParameterFiltersModal';
 
 // Utilities
 import { getMonthName } from '../utils/powerReadingsUtils';
+
+import axios from 'axios';
 
 const PowerReadings = () => {
   // Set up hooks
@@ -101,12 +103,88 @@ const PowerReadings = () => {
       setSelectedDay(null);
     }
   };
-  
-  // Download PDF handler
-  const handleDownloadPDF = () => {
-    alert('Downloading data as PDF...');
-    // Implement PDF download logic here
-  };
+
+// Add this state to track download progress
+const [isDownloading, setIsDownloading] = useState(false);
+
+// Replace your handleDownloadCSV function with this implementation
+const handleDownloadCSV = async () => {
+  try {
+    // Only proceed if we have a selected node
+    if (!filters.node) {
+      alert('Please select a node first');
+      return;
+    }
+    
+    // Show loading state
+    setIsDownloading(true);
+    
+    // Prepare the query parameters
+    const params = {
+      node: filters.node,
+      // Include parameter filters if they exist
+      ...(filters.voltage_min && { voltage_min: filters.voltage_min }),
+      ...(filters.voltage_max && { voltage_max: filters.voltage_max }),
+      ...(filters.current_min && { current_min: filters.current_min }),
+      ...(filters.current_max && { current_max: filters.current_max }),
+      ...(filters.power_min && { power_min: filters.power_min }),
+      ...(filters.power_max && { power_max: filters.power_max }),
+      ...(filters.frequency_min && { frequency_min: filters.frequency_min }),
+      ...(filters.frequency_max && { frequency_max: filters.frequency_max }),
+      ...(filters.power_factor_min && { power_factor_min: filters.power_factor_min }),
+      ...(filters.power_factor_max && { power_factor_max: filters.power_factor_max }),
+      ...(filters.show_anomalies !== undefined && { show_anomalies: filters.show_anomalies }),
+    };
+    
+    console.log('Requesting CSV download with parameters:', params);
+    
+    // Use the full URL to your Django backend
+    const backendUrl = `${import.meta.env.VITE_API_URL}power-readings/export-csv/`;
+    console.log('Using backend URL:', backendUrl);
+    
+    // Make the API request (set responseType to blob to handle the file)
+    const response = await axios.get(backendUrl, {
+      params,
+      responseType: 'blob',
+      headers: {
+        'Accept': 'text/csv, application/octet-stream, */*'
+      }
+    });
+    
+    // Check if the response is actually a CSV
+    const contentType = response.headers['content-type'];
+    if (contentType && contentType.includes('text/html')) {
+      throw new Error('Received HTML instead of CSV. The server might have returned an error.');
+    }
+    
+    // Create a download link and trigger the download
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Generate a descriptive filename
+    let filename = `${filters.node}_power_data`;
+
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    filename += `_export_${dateStr}.csv`;
+    
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(link);
+    setIsDownloading(false);
+    
+    console.log('CSV download completed');
+  } catch (error) {
+    console.error('Error downloading CSV:', error);
+    setIsDownloading(false);
+    alert('Failed to download CSV: ' + (error.message || 'Unknown error'));
+  }
+};
   
   return (
     <div className="readings-container">
@@ -115,10 +193,18 @@ const PowerReadings = () => {
         <h2 className="main-title">Power Quality Tabled Data</h2>
         <button 
           className="download-btn" 
-          onClick={handleDownloadPDF} 
-          disabled={filteredReadings.length === 0}
+          onClick={handleDownloadCSV} 
+          disabled={!filters.node || isDownloading}
         >
-          <FontAwesomeIcon icon={faDownload} /> Download as PDF
+          {isDownloading ? (
+            <>
+              <FontAwesomeIcon icon={faSpinner} spin /> Downloading...
+            </>
+          ) : (
+            <>
+              <FontAwesomeIcon icon={faDownload} /> Download All Node Data
+            </>
+          )}
         </button>
       </div>
       

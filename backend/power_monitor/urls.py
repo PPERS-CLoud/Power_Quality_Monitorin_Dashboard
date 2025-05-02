@@ -14,6 +14,11 @@ from .views import (
     MonthsForNodeYearView,
     DaysForNodeYearMonthView,
     NodeDataView,
+    DashboardDataView,
+    UserRegistrationView,
+    UserLoginView,
+    export_csv,
+    user_profile,
 )
 
 # Create a router and register our ViewSets
@@ -39,4 +44,9 @@ urlpatterns = [
     path('firebase/months/', MonthsForNodeYearView.as_view(), name='months-for-node-year'),
     path('firebase/days/', DaysForNodeYearMonthView.as_view(), name='days-for-node-year-month'),
     path('firebase/node-data/', NodeDataView.as_view(), name='node-data'),
+    path('firebase/dashboard-data/', DashboardDataView.as_view(), name='dashboard-data'),
+    path('auth/register/', UserRegistrationView.as_view(), name='register'),
+    path('auth/login/', UserLoginView.as_view(), name='login'),
+    path('power-readings/export-csv/', export_csv, name='export_csv'),
+    path('auth/user-profile/', user_profile, name='user-profile'),
 ]
