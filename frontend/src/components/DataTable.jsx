@@ -13,7 +13,6 @@ const DataTable = ({ readings }) => {
             <th>Node Code</th>
             <th>Date</th>
             <th>Time</th>
-            <th>Location</th>
             <th>Voltage (V)</th>
             <th>Current (A)</th>
             <th>Power (W)</th>

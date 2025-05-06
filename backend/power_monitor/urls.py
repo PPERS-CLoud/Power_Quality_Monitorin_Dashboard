@@ -49,4 +49,5 @@ urlpatterns = [
     path('auth/login/', UserLoginView.as_view(), name='login'),
     path('power-readings/export-csv/', export_csv, name='export_csv'),
     path('auth/user-profile/', user_profile, name='user-profile'),
+    path('firebase/node-date-range/', NodeDateRangeView.as_view(), name='node-date-range'),
 ]

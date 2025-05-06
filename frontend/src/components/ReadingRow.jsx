@@ -21,7 +21,6 @@ const ReadingRow = React.memo(({ reading, formatDate, formatTime }) => {
             <td>{reading.deviceId}</td>
             <td>{formatDate(reading.timestamp)}</td>
             <td>{formatTime(reading.timestamp)}</td>
-            <td>{reading.location}</td>
             <td className={!(217.4 <= reading.voltage && reading.voltage <= 242.6) ? 'anomaly-value' : ''}>
                 {reading.voltage}
             </td>

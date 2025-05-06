@@ -240,3 +240,26 @@ export const fetchDashboardData = async (nodeId, startDate, endDate, graphType =
         return { readings: [] };
     }
 };
+
+/**
+ * Fetch available date range for a specific node
+ * @param {string} nodeId - Node ID
+ * @returns {Promise<Object>} Object containing min_date and max_date
+ */
+export const fetchNodeDateRange = async (nodeId) => {
+    try {
+        console.log(`Fetching date range for node ${nodeId}`);
+        const response = await axios.get(`${API_URL}firebase/node-date-range/`, {
+            params: { node: nodeId }
+        });
+        
+        if (response.data) {
+            console.log(`Date range for ${nodeId}:`, response.data);
+            return response.data;
+        }
+        return { min_date: null, max_date: null };
+    } catch (error) {
+        console.error(`Error fetching date range for node ${nodeId}:`, error);
+        return { min_date: null, max_date: null };
+    }
+};
