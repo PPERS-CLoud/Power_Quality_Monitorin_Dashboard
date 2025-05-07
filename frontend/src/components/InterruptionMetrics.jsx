@@ -189,10 +189,6 @@ const InterruptionMetrics = ({
         </ul>
       </div>
       
-      <div class="modal-section">
-        <h4>Detection Parameters</h4>
-        <p>Power interruptions are defined in this system as voltage drops below ${voltageThreshold}V lasting at least ${formatDuration(minDurationSec)}.</p>
-      </div>
     `;
 
     return content;
