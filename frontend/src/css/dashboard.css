@@ -947,3 +947,140 @@
       width: 100%;
     }
   }
+
+  /* Enhanced styles for interruption metrics modals */
+.modal-content {
+  max-width: 600px; /* Slightly wider to accommodate tables */
+  max-height: 85vh; /* Limit height to prevent overflow */
+  overflow-y: auto; /* Enable scrolling if content is too long */
+}
+
+.modal-section {
+  margin-bottom: 15px;
+}
+
+.modal-section h4 {
+  color: #2c5282;
+  margin-top: 0;
+  margin-bottom: 8px; /* Reduced from 10px */
+  font-size: 1rem; /* Slightly smaller */
+}
+
+.stats-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  background-color: #f0f4ff;
+  border-radius: 6px;
+  padding: 8px 12px; /* Reduced padding */
+  margin: 10px 0; /* Reduced margin */
+  gap: 10px; /* Reduced gap */
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 120px; /* Reduced from 150px */
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: #4a5568;
+  margin-bottom: 3px;
+}
+
+.stat-value {
+  font-size: 1rem; /* Reduced from 1.05rem */
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.interruption-table-container {
+  max-height: 200px; /* Reduced from 300px */
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  margin: 10px 0; /* Reduced from 15px */
+}
+
+.interruption-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.interruption-table th,
+.interruption-table td {
+  padding: 6px 10px; /* Reduced padding */
+  font-size: 0.85rem; /* Smaller font */
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.interruption-table th {
+  background-color: #f7fafc;
+  position: sticky;
+  top: 0;
+  font-weight: 600;
+}
+
+.interruption-details {
+  background-color: #fff8f0;
+  padding: 8px 12px; /* Reduced padding */
+  border-left: 3px solid #ed8936;
+  border-radius: 4px;
+  margin: 8px 0; /* Reduced margin */  
+}
+
+.note-box {
+  background-color: #f0fff4;
+  border-left: 3px solid #38a169;
+  border-radius: 4px;
+  padding: 8px 12px; /* Reduced padding */
+  margin: 12px 0 5px; /* Reduced margin */
+  font-size: 0.85rem; /* Smaller font */
+}
+
+.table-note {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #718096;
+  padding: 10px;
+  margin: 0;
+}
+
+.metric-subtext {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.modal-body ul {
+  margin: 8px 0; /* Reduced margin */
+  padding-left: 20px; /* Reduced padding */
+}
+
+.modal-body ul li {
+  margin-bottom: 4px; /* Space between list items */
+  font-size: 0.9rem; /* Slightly smaller font */
+}
+
+/* Mobile optimization */
+@media (max-width: 576px) {
+  .modal-content {
+    width: 95%; /* Use more of screen width */
+    max-height: 90vh; /* Allow more height on mobile */
+  }
+  .stats-summary {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .interruption-table th,
+  .interruption-table td {
+    padding: 5px 6px; /* Further reduced padding */
+    font-size: 0.8rem; /* Even smaller font */
+  }
+}
